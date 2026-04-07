@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environment
+venv/
+env/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Environment
+.env
+
+# Data (keep structure, ignore data files)
+data/*.db
+data/*.db-wal
+data/*.db-shm
+logs/*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Railway
+.nixpacks/

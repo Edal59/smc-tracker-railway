@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}Trade Log — SMC Performance Tracker{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h5 class="mb-0"><i class="bi bi-journal-text me-1"></i> Trade Log</h5>
+    <div class="d-flex gap-2">
+        <select class="form-select form-select-sm" id="filter-pair" style="width:auto;">
+            <option value="">All Pairs</option>
+        </select>
+        <select class="form-select form-select-sm" id="filter-status" style="width:auto;">
+            <option value="">All Status</option>
+            <option value="ACTIVE">Active</option>
+            <option value="WON">Won</option>
+            <option value="LOST">Lost</option>
+            <option value="TIMEOUT">Timeout</option>
+            <option value="GET_OUT">Get Out</option>
+        </select>
+        <button class="btn btn-sm btn-outline-success" onclick="loadSignals()">
+            <i class="bi bi-arrow-clockwise"></i> Refresh
+        </button>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-dark table-hover table-sm mb-0">
+                <thead>
+                    <tr>
+                        <th>Time</th><th>Signal ID</th><th>Pair</th><th>Dir</th>
+                        <th>Type</th><th>Entry</th><th>SL</th><th>TP</th>
+                        <th>POI</th><th>Kill Zone</th><th>Status</th>
+                        <th>R:R</th><th>Pips</th>
+                    </tr>
+                </thead>
+                <tbody id="signals-table"></tbody>
+            </table>
+        </div>
+    </div>
+    <div class="card-footer d-flex justify-content-between align-items-center">
+        <small class="text-muted" id="signals-info">Showing 0 signals</small>
+        <div>
+            <button class="btn btn-sm btn-outline-secondary" id="btn-prev" onclick="prevPage()" disabled>
+                <i class="bi bi-chevron-left"></i> Prev
+            </button>
+            <button class="btn btn-sm btn-outline-secondary" id="btn-next" onclick="nextPage()">
+                Next <i class="bi bi-chevron-right"></i>
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Signal Detail Modal -->
+<div class="modal fade" id="signalModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content bg-dark">
+            <div class="modal-header">
+                <h5 class="modal-title" id="modal-title">Signal Detail</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="modal-body">Loading...</div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/trades.js"></script>
+{% endblock %}

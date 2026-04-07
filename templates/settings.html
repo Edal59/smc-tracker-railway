@@ -1,0 +1,164 @@
+{% extends "base.html" %}
+{% block title %}Setup Guide — SMC Performance Tracker{% endblock %}
+
+{% block content %}
+<div class="row g-4">
+    <!-- Webhook URL -->
+    <div class="col-md-8">
+        <div class="card border-success">
+            <div class="card-header bg-success bg-opacity-25">
+                <i class="bi bi-link-45deg me-1"></i> Webhook URL (paste in TradingView alerts)
+            </div>
+            <div class="card-body">
+                <p class="text-muted small mb-2">This is where TradingView sends your signals:</p>
+                <div class="input-group mb-3">
+                    <input type="text" class="form-control font-monospace" id="webhook-url" 
+                           value="{{ webhook_url }}" readonly>
+                    <button class="btn btn-outline-success" onclick="copyText('webhook-url')">
+                        <i class="bi bi-clipboard"></i> Copy
+                    </button>
+                </div>
+
+                <p class="text-muted small mb-2"><i class="bi bi-key me-1"></i> API Key (include in alert body):</p>
+                <div class="input-group mb-3">
+                    <input type="text" class="form-control font-monospace" id="api-key" 
+                           value="{{ config.api_key }}" readonly>
+                    <button class="btn btn-outline-success" onclick="copyText('api-key')">
+                        <i class="bi bi-clipboard"></i> Copy
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Alert Template -->
+        <div class="card mt-3">
+            <div class="card-header">
+                <i class="bi bi-code-square me-1"></i> TradingView Alert Message Template
+            </div>
+            <div class="card-body">
+                <p class="text-muted small">Copy this template into your TradingView alert message body:</p>
+                <pre class="bg-dark border rounded p-3" id="alert-template">{
+  "api_key": "{{ config.api_key }}",
+  "event": "{{strategy.order.action}}",
+  "pair": "{{ticker}}",
+  "direction": "{{strategy.order.action}}",
+  "entry_price": {{close}},
+  "signal_id": "{{ticker}}_{{timenow}}_{{strategy.order.action}}"
+}</pre>
+                <button class="btn btn-sm btn-outline-info" onclick="copyTemplate()">
+                    <i class="bi bi-clipboard"></i> Copy Template
+                </button>
+
+                <hr>
+                <h6>Full Signal Format (for SMC Indicator):</h6>
+                <pre class="bg-dark border rounded p-3" id="full-template">{
+  "api_key": "{{ config.api_key }}",
+  "event": "SIGNAL_ENTRY",
+  "signal_id": "{{ticker}}_{{timenow}}_LONG",
+  "timestamp": "{{timenow}}",
+  "signal": {
+    "pair": "{{ticker}}",
+    "direction": "LONG",
+    "type": "STANDARD",
+    "entry_price": {{close}},
+    "stop_loss": 0,
+    "take_profit": 0,
+    "target_rr": 3.0
+  },
+  "hud": {
+    "poi_score": 5,
+    "kill_zone": "London KZ",
+    "kill_zone_id": 1,
+    "entry_model": "Refined OB",
+    "entry_model_id": 2,
+    "structure": "BULLISH",
+    "zone": "DISCOUNT"
+  }
+}</pre>
+            </div>
+        </div>
+    </div>
+
+    <!-- Quick Setup Guide -->
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header bg-info bg-opacity-25">
+                <i class="bi bi-rocket-takeoff me-1"></i> Quick Setup Guide
+            </div>
+            <div class="card-body">
+                <ol class="list-group list-group-numbered list-group-flush bg-transparent">
+                    <li class="list-group-item bg-transparent border-secondary">
+                        <strong>Copy the Webhook URL</strong> above
+                    </li>
+                    <li class="list-group-item bg-transparent border-secondary">
+                        In TradingView: <strong>Create Alert → Webhook URL → Paste</strong>
+                    </li>
+                    <li class="list-group-item bg-transparent border-secondary">
+                        Copy the <strong>Alert Message Template</strong> into the alert body
+                    </li>
+                    <li class="list-group-item bg-transparent border-secondary">
+                        Make sure your <strong>API key</strong> is in the alert body JSON
+                    </li>
+                    <li class="list-group-item bg-transparent border-secondary">
+                        Click <strong>Dashboard</strong> to view your performance!
+                    </li>
+                </ol>
+            </div>
+        </div>
+
+        <!-- Server Info -->
+        <div class="card mt-3">
+            <div class="card-header">
+                <i class="bi bi-info-circle me-1"></i> Server Info
+            </div>
+            <div class="card-body">
+                <table class="table table-sm table-dark mb-0">
+                    <tr><td class="text-muted">Status</td><td><span class="badge bg-success">Online</span></td></tr>
+                    <tr><td class="text-muted">Auth Required</td><td>{{ 'Yes' if config.require_auth else 'No' }}</td></tr>
+                    <tr><td class="text-muted">API Key Set</td><td>{{ 'Yes ✓' if config.api_key else 'No ⚠️' }}</td></tr>
+                    <tr><td class="text-muted">Price Tracker</td><td>{{ 'Enabled' if config.price_tracker_enabled else 'Disabled' }}</td></tr>
+                    <tr><td class="text-muted">Version</td><td>1.0.0</td></tr>
+                </table>
+            </div>
+        </div>
+
+        <!-- API Endpoints -->
+        <div class="card mt-3">
+            <div class="card-header">
+                <i class="bi bi-hdd-network me-1"></i> API Endpoints
+            </div>
+            <div class="card-body small">
+                <code>POST /api/v1/signal</code> — Receive webhook<br>
+                <code>GET  /api/v1/health</code> — Health check<br>
+                <code>GET  /api/v1/signals</code> — List signals<br>
+                <code>GET  /api/v1/metrics</code> — Performance metrics<br>
+                <code>GET  /api/v1/pnl</code> — P&L curve data<br>
+                <code>GET  /api/v1/report</code> — Full JSON report<br>
+                <code>GET  /api/v1/export/csv</code> — CSV export<br>
+                <p class="text-muted mt-2 mb-0">API endpoints require the <code>X-API-Key</code> header or <code>api_key</code> in the request body.</p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function copyText(id) {
+    const el = document.getElementById(id);
+    navigator.clipboard.writeText(el.value).then(() => {
+        const btn = el.nextElementSibling;
+        btn.innerHTML = '<i class="bi bi-check"></i> Copied!';
+        setTimeout(() => btn.innerHTML = '<i class="bi bi-clipboard"></i> Copy', 2000);
+    });
+}
+
+function copyTemplate() {
+    const text = document.getElementById('alert-template').textContent;
+    navigator.clipboard.writeText(text).then(() => {
+        event.target.innerHTML = '<i class="bi bi-check"></i> Copied!';
+        setTimeout(() => event.target.innerHTML = '<i class="bi bi-clipboard"></i> Copy Template', 2000);
+    });
+}
+</script>
+{% endblock %}

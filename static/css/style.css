@@ -1,0 +1,107 @@
+/* SMC Performance Tracker — Cloud Dashboard Styles */
+
+body {
+    background-color: #0a0e1a;
+    color: #e0e0e0;
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+}
+
+.navbar {
+    background: linear-gradient(135deg, #0d1117 0%, #161b22 100%) !important;
+    border-bottom: 1px solid #21262d !important;
+}
+
+.navbar-brand {
+    font-size: 1.1rem;
+}
+
+.card {
+    background: #161b22;
+    border: 1px solid #21262d;
+    border-radius: 8px;
+}
+
+.card-header {
+    background: rgba(255,255,255,0.03);
+    border-bottom: 1px solid #21262d;
+    font-weight: 600;
+    font-size: 0.9rem;
+}
+
+.stat-card {
+    background: linear-gradient(135deg, #161b22 0%, #1a2233 100%);
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.stat-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+}
+
+.table-dark {
+    --bs-table-bg: transparent;
+    --bs-table-border-color: #21262d;
+}
+
+.table-dark th {
+    background: rgba(255,255,255,0.05);
+    font-weight: 600;
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: #8b949e;
+}
+
+.table-hover > tbody > tr:hover {
+    background-color: rgba(56, 139, 253, 0.1) !important;
+}
+
+.badge-won { background-color: #238636; }
+.badge-lost { background-color: #da3633; }
+.badge-active { background-color: #1f6feb; }
+.badge-timeout { background-color: #d29922; }
+.badge-getout { background-color: #8957e5; }
+
+.text-won { color: #3fb950; }
+.text-lost { color: #f85149; }
+
+pre {
+    font-size: 0.8rem;
+    color: #79c0ff;
+}
+
+.font-monospace {
+    font-size: 0.85rem;
+}
+
+.breakdown-bar {
+    height: 6px;
+    border-radius: 3px;
+    background: #21262d;
+    overflow: hidden;
+}
+
+.breakdown-bar-fill {
+    height: 100%;
+    border-radius: 3px;
+    transition: width 0.5s ease;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: #0d1117;
+}
+
+::-webkit-scrollbar-thumb {
+    background: #30363d;
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #484f58;
+}
