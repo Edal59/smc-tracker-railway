@@ -74,10 +74,40 @@ def health_check():
 # Signal Webhook (Main Endpoint)
 # ============================================================
 
-@api_bp.route('/signal', methods=['POST'])
-@require_api_key
+@api_bp.route('/signal', methods=['GET', 'POST'])
 def receive_signal():
-    """Receive a signal alert from TradingView."""
+    """Receive a signal alert from TradingView.
+    
+    GET:  Returns 200 OK for webhook validation/health checks (no auth required).
+    POST: Processes actual signal data (auth required).
+    """
+    # GET requests: return 200 OK for TradingView webhook validation
+    if request.method == 'GET':
+        logger.info("GET /signal - webhook validation/health check")
+        return jsonify({
+            "status": "ok",
+            "message": "SMC Performance Tracker Webhook Endpoint",
+            "version": "1.0",
+            "accepts": "POST",
+            "endpoint": "/api/v1/signal"
+        }), 200
+
+    # POST requests: check API key authentication
+    if config.require_auth:
+        api_key = ''
+        try:
+            body = request.get_json(silent=True)
+            if body and isinstance(body, dict):
+                api_key = body.get('api_key', '')
+        except Exception:
+            pass
+        if not api_key:
+            api_key = request.headers.get('X-API-Key', '')
+        expected = config.api_key
+        if expected and api_key != expected:
+            logger.warning(f"Unauthorized POST /signal from {request.remote_addr}")
+            return jsonify({'error': 'Unauthorized'}), 401
+
     data = request.get_json(silent=True)
     if not data:
         return jsonify({'error': 'Invalid JSON payload'}), 400
