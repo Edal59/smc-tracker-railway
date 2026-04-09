@@ -91,6 +91,15 @@ CREATE TABLE IF NOT EXISTS signals (
     price_1h_after      REAL,                          -- Price 1 hour after signal
     price_4h_after      REAL,                          -- Price 4 hours after signal
     
+    -- Manual Trade Tracking
+    trade_status        TEXT DEFAULT 'pending' CHECK(trade_status IN ('pending', 'taken', 'missed', 'ignored')),
+    actual_entry_price  REAL,                          -- Actual price trader entered at
+    actual_exit_price   REAL,                          -- Actual price trader exited at
+    actual_entry_time   TEXT,                          -- When trader actually entered
+    actual_exit_time    TEXT,                          -- When trader actually exited
+    actual_pnl          REAL,                          -- Actual P&L in pips
+    trade_notes         TEXT,                          -- Notes about the trade decision
+    
     -- Metadata
     indicator_version   TEXT DEFAULT 'v13.4',          -- Indicator version
     timeframe           TEXT DEFAULT '15m',            -- Chart timeframe
@@ -213,6 +222,7 @@ CREATE INDEX IF NOT EXISTS idx_signals_entry_model_id ON signals(entry_model_id)
 CREATE INDEX IF NOT EXISTS idx_signals_kill_zone_id ON signals(kill_zone_id);
 CREATE INDEX IF NOT EXISTS idx_signals_amd_phase_id ON signals(amd_phase_id);
 CREATE INDEX IF NOT EXISTS idx_signals_created_at ON signals(created_at);
+CREATE INDEX IF NOT EXISTS idx_signals_trade_status ON signals(trade_status);
 
 -- Price ticks: Query by signal
 CREATE INDEX IF NOT EXISTS idx_price_ticks_signal_id ON price_ticks(signal_id);

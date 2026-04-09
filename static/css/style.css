@@ -87,6 +87,36 @@ pre {
     transition: width 0.5s ease;
 }
 
+/* Trade Status Badges */
+.badge-trade-taken { background-color: #238636; color: #fff; }
+.badge-trade-missed { background-color: #d29922; color: #000; }
+.badge-trade-ignored { background-color: #484f58; color: #8b949e; }
+.badge-trade-pending { background-color: #30363d; color: #8b949e; }
+
+/* Trade Row Borders */
+.trade-row-taken { border-left: 3px solid #238636 !important; }
+.trade-row-missed { border-left: 3px solid #d29922 !important; }
+.trade-row-ignored { border-left: 3px solid #484f58 !important; }
+
+/* Extra small buttons */
+.btn-xs {
+    padding: 0.15rem 0.35rem;
+    font-size: 0.75rem;
+    line-height: 1.2;
+    border-radius: 0.2rem;
+    margin: 0 1px;
+}
+
+/* Analytics card */
+#analytics-card .card-body {
+    font-size: 0.9rem;
+}
+
+#analytics-card h6 {
+    font-size: 0.75rem;
+    margin-bottom: 0.5rem;
+}
+
 /* Scrollbar */
 ::-webkit-scrollbar {
     width: 8px;

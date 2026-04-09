@@ -14,10 +14,41 @@ from src.config import config, PROJECT_ROOT
 logger = logging.getLogger(__name__)
 
 SCHEMA_PATH = os.path.join(PROJECT_ROOT, 'schemas', 'schema.sql')
+MIGRATION_PATH = os.path.join(PROJECT_ROOT, 'schemas', 'migrate_trade_tracking.sql')
 
 
 def get_db_path():
     return config.db_path
+
+
+def _run_migrations(conn):
+    """Run migrations to add new columns to existing databases."""
+    # Check if trade_status column exists
+    cursor = conn.execute("PRAGMA table_info(signals)")
+    columns = [row[1] for row in cursor.fetchall()]
+    
+    if 'trade_status' not in columns:
+        logger.info("Running trade tracking migration...")
+        migration_columns = [
+            ("trade_status", "TEXT DEFAULT 'pending'"),
+            ("actual_entry_price", "REAL"),
+            ("actual_exit_price", "REAL"),
+            ("actual_entry_time", "TEXT"),
+            ("actual_exit_time", "TEXT"),
+            ("actual_pnl", "REAL"),
+            ("trade_notes", "TEXT"),
+        ]
+        for col_name, col_def in migration_columns:
+            if col_name not in columns:
+                try:
+                    conn.execute(f"ALTER TABLE signals ADD COLUMN {col_name} {col_def}")
+                    logger.info(f"Added column: {col_name}")
+                except Exception as e:
+                    logger.warning(f"Column {col_name} may already exist: {e}")
+        
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_signals_trade_status ON signals(trade_status)")
+        conn.commit()
+        logger.info("Trade tracking migration complete")
 
 
 def init_db(db_path=None):
@@ -31,6 +62,8 @@ def init_db(db_path=None):
             schema_sql = f.read()
         conn.executescript(schema_sql)
         conn.commit()
+        # Run migrations for existing databases
+        _run_migrations(conn)
         logger.info(f"Database initialized at {path}")
     finally:
         conn.close()
@@ -81,6 +114,8 @@ def insert_signal(signal_data: dict, db_path=None) -> str:
         'mfe_price', 'mfe_pips', 'mfe_rr', 'mae_price', 'mae_pips', 'mae_rr',
         'outcome_timestamp', 'outcome_price', 'bars_to_outcome', 'time_to_outcome_min',
         'actual_rr', 'pips_gained',
+        'trade_status', 'actual_entry_price', 'actual_exit_price',
+        'actual_entry_time', 'actual_exit_time', 'actual_pnl', 'trade_notes',
     }
 
     cols = []
@@ -324,6 +359,140 @@ def get_performance_summary(pair=None, days=None, db_path=None) -> dict:
     gross_loss = abs(result['avg_pips_lost'] or 0) * l
     result['profit_factor'] = gross_profit / gross_loss if gross_loss > 0 else float('inf') if gross_profit > 0 else 0
     return result
+
+
+def get_signals_with_trade_status(pair=None, status=None, trade_status=None,
+                                   limit=100, offset=0, db_path=None) -> list:
+    """Get signals with optional trade_status filter."""
+    conditions = []
+    params = []
+    if pair:
+        conditions.append("pair = ?")
+        params.append(pair)
+    if status:
+        conditions.append("status = ?")
+        params.append(status)
+    if trade_status:
+        conditions.append("trade_status = ?")
+        params.append(trade_status)
+    where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+    sql = f"SELECT * FROM signals {where} ORDER BY signal_timestamp DESC LIMIT ? OFFSET ?"
+    params.extend([limit, offset])
+    with get_connection(db_path) as conn:
+        rows = conn.execute(sql, params).fetchall()
+    return [dict_from_row(r) for r in rows]
+
+
+def count_signals_with_trade_status(pair=None, status=None, trade_status=None, db_path=None) -> int:
+    """Count signals with optional trade_status filter."""
+    conditions = []
+    params = []
+    if pair:
+        conditions.append("pair = ?")
+        params.append(pair)
+    if status:
+        conditions.append("status = ?")
+        params.append(status)
+    if trade_status:
+        conditions.append("trade_status = ?")
+        params.append(trade_status)
+    where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+    sql = f"SELECT COUNT(*) FROM signals {where}"
+    with get_connection(db_path) as conn:
+        return conn.execute(sql, params).fetchone()[0]
+
+
+def mark_trade(signal_id: str, trade_status: str, trade_data: dict = None, db_path=None) -> dict:
+    """Mark a signal with trade status and optional trade details."""
+    if trade_status not in ('taken', 'missed', 'ignored', 'pending'):
+        raise ValueError(f"Invalid trade_status: {trade_status}")
+    
+    updates = {'trade_status': trade_status}
+    if trade_data:
+        for key in ('actual_entry_price', 'actual_exit_price', 'actual_entry_time',
+                     'actual_exit_time', 'actual_pnl', 'trade_notes'):
+            if key in trade_data and trade_data[key] is not None:
+                updates[key] = trade_data[key]
+    
+    update_signal(signal_id, updates, db_path)
+    return get_signal(signal_id, db_path)
+
+
+def get_trade_analytics(pair=None, db_path=None) -> dict:
+    """Get trade tracking analytics comparing actual vs theoretical performance."""
+    conditions = []
+    params = []
+    if pair and pair != 'ALL':
+        conditions.append("pair = ?")
+        params.append(pair)
+    where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+    
+    sql = f"""
+    SELECT
+        COUNT(*) as total_signals,
+        SUM(CASE WHEN trade_status = 'taken' THEN 1 ELSE 0 END) as taken_count,
+        SUM(CASE WHEN trade_status = 'missed' THEN 1 ELSE 0 END) as missed_count,
+        SUM(CASE WHEN trade_status = 'ignored' THEN 1 ELSE 0 END) as ignored_count,
+        SUM(CASE WHEN trade_status = 'pending' OR trade_status IS NULL THEN 1 ELSE 0 END) as pending_count,
+        
+        -- Actual performance (taken trades only)
+        SUM(CASE WHEN trade_status = 'taken' AND actual_pnl > 0 THEN 1 ELSE 0 END) as actual_wins,
+        SUM(CASE WHEN trade_status = 'taken' AND actual_pnl <= 0 THEN 1 ELSE 0 END) as actual_losses,
+        SUM(CASE WHEN trade_status = 'taken' THEN COALESCE(actual_pnl, 0) ELSE 0 END) as actual_total_pnl,
+        AVG(CASE WHEN trade_status = 'taken' AND actual_pnl IS NOT NULL THEN actual_pnl ELSE NULL END) as actual_avg_pnl,
+        
+        -- Theoretical performance (all resolved signals)
+        SUM(CASE WHEN status = 'WON' THEN 1 ELSE 0 END) as theoretical_wins,
+        SUM(CASE WHEN status = 'LOST' THEN 1 ELSE 0 END) as theoretical_losses,
+        SUM(CASE WHEN status IN ('WON', 'LOST', 'TIMEOUT', 'GET_OUT') THEN COALESCE(pips_gained, 0) ELSE 0 END) as theoretical_total_pnl,
+        AVG(CASE WHEN status IN ('WON', 'LOST', 'TIMEOUT', 'GET_OUT') THEN pips_gained ELSE NULL END) as theoretical_avg_pnl
+    FROM signals {where}
+    """
+    
+    with get_connection(db_path) as conn:
+        row = conn.execute(sql, params).fetchone()
+    
+    if not row:
+        return _empty_analytics()
+    
+    result = dict_from_row(row)
+    
+    # Calculate rates
+    taken = result['taken_count'] or 0
+    actual_wins = result['actual_wins'] or 0
+    actual_losses = result['actual_losses'] or 0
+    theo_wins = result['theoretical_wins'] or 0
+    theo_losses = result['theoretical_losses'] or 0
+    total = result['total_signals'] or 0
+    
+    result['taken_pct'] = round((taken / total * 100), 1) if total > 0 else 0
+    result['missed_pct'] = round(((result['missed_count'] or 0) / total * 100), 1) if total > 0 else 0
+    result['ignored_pct'] = round(((result['ignored_count'] or 0) / total * 100), 1) if total > 0 else 0
+    result['pending_pct'] = round(((result['pending_count'] or 0) / total * 100), 1) if total > 0 else 0
+    
+    result['actual_win_rate'] = round((actual_wins / (actual_wins + actual_losses) * 100), 1) if (actual_wins + actual_losses) > 0 else 0
+    result['theoretical_win_rate'] = round((theo_wins / (theo_wins + theo_losses) * 100), 1) if (theo_wins + theo_losses) > 0 else 0
+    
+    # Round numeric fields
+    for key in ('actual_total_pnl', 'actual_avg_pnl', 'theoretical_total_pnl', 'theoretical_avg_pnl'):
+        if result[key] is not None:
+            result[key] = round(result[key], 2)
+        else:
+            result[key] = 0
+    
+    return result
+
+
+def _empty_analytics():
+    return {
+        'total_signals': 0, 'taken_count': 0, 'missed_count': 0,
+        'ignored_count': 0, 'pending_count': 0,
+        'taken_pct': 0, 'missed_pct': 0, 'ignored_pct': 0, 'pending_pct': 0,
+        'actual_wins': 0, 'actual_losses': 0,
+        'actual_win_rate': 0, 'actual_total_pnl': 0, 'actual_avg_pnl': 0,
+        'theoretical_wins': 0, 'theoretical_losses': 0,
+        'theoretical_win_rate': 0, 'theoretical_total_pnl': 0, 'theoretical_avg_pnl': 0,
+    }
 
 
 def get_signals_for_analysis(pair=None, days=None, db_path=None) -> list:
