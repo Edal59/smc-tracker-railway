@@ -180,3 +180,54 @@ def dash_analytics():
     pair = request.args.get('pair')
     analytics = get_trade_analytics(pair=pair)
     return jsonify(analytics)
+
+
+@dashboard_bp.route('/dash/api/reset-database', methods=['POST'])
+def dash_reset_database():
+    """Clear all signal data from the database. Requires API key confirmation."""
+    from src.database import get_connection
+    
+    data = request.get_json(silent=True) or {}
+    api_key = data.get('api_key', '')
+    
+    # Require API key for safety
+    if api_key != config.api_key:
+        return jsonify({'error': 'Invalid API key. Send {"api_key": "YOUR_KEY"} to confirm reset.'}), 401
+    
+    try:
+        report = {}
+        with get_connection() as conn:
+            # Count rows before clearing
+            tables = ['signals', 'signal_events', 'price_ticks', 'daily_metrics', 'system_log']
+            for table in tables:
+                try:
+                    count = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+                    report[table] = {'before': count}
+                except Exception:
+                    report[table] = {'before': 0, 'note': 'table may not exist'}
+            
+            # Clear all data tables (keep pair_config and schema)
+            conn.execute("DELETE FROM signal_events")
+            conn.execute("DELETE FROM price_ticks")
+            conn.execute("DELETE FROM daily_metrics")
+            conn.execute("DELETE FROM system_log")
+            conn.execute("DELETE FROM signals")
+            conn.commit()
+            
+            # Verify
+            for table in tables:
+                try:
+                    count = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+                    report[table]['after'] = count
+                except Exception:
+                    report[table]['after'] = 'unknown'
+        
+        logger.info("Database reset completed successfully")
+        return jsonify({
+            'status': 'ok',
+            'message': 'All signal data cleared successfully',
+            'report': report
+        })
+    except Exception as e:
+        logger.error(f"Database reset failed: {e}", exc_info=True)
+        return jsonify({'error': str(e)}), 500
