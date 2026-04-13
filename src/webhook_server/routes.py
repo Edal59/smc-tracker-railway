@@ -3,6 +3,7 @@ SMC Performance Tracker — API Routes
 All webhook and REST API endpoints.
 """
 import logging
+from datetime import datetime, timezone
 from functools import wraps
 from flask import Blueprint, request, jsonify
 
@@ -71,6 +72,66 @@ def health_check():
 
 
 # ============================================================
+# Ultra-Simple Format Converter
+# ============================================================
+
+def _expand_simple_format(data: dict) -> dict:
+    """
+    Convert an ultra-simple TradingView webhook payload into compact format.
+
+    Input (ultra-simple):
+        {"k": "API_KEY", "p": "GBPJPY", "d": "LONG", "pr": "214.100"}
+
+    Output (compact format for existing processor):
+        {"api_key": "...", "e": "ENTRY", "id": "GBPJPY_20260412_183000",
+         "p": "GBPJPY", "d": "L", "ep": 214.1, "sl": 0, "tp": 0, "t": "..."}
+    """
+    pair = str(data.get('p', '')).upper().strip()
+    direction = str(data.get('d', 'LONG')).upper().strip()
+    price_str = str(data.get('pr', '0')).strip()
+
+    try:
+        entry_price = float(price_str)
+    except (ValueError, TypeError):
+        entry_price = 0.0
+
+    now = datetime.now(timezone.utc)
+    ts_str = now.strftime('%Y%m%d_%H%M%S')
+    signal_id = f"{pair}_{ts_str}"
+
+    # Map direction to compact key
+    is_long = direction in ('LONG', 'BUY', 'L')
+    d_compact = 'L' if is_long else 'S'
+
+    # Estimate SL/TP from entry price so distance calcs aren't nonsensical
+    # Use a small pip-based offset (30 pips SL, 90 pips TP for 1:3 R:R)
+    pip_mult = 0.01 if 'JPY' in pair else 0.0001
+    sl_dist = 30 * pip_mult
+    tp_dist = 90 * pip_mult
+    if is_long:
+        sl = round(entry_price - sl_dist, 5)
+        tp = round(entry_price + tp_dist, 5)
+    else:
+        sl = round(entry_price + sl_dist, 5)
+        tp = round(entry_price - tp_dist, 5)
+
+    return {
+        'api_key': data.get('k', ''),
+        'e': 'ENTRY',
+        'id': signal_id,
+        'p': pair,
+        'd': d_compact,
+        'ep': entry_price,
+        'sl': sl,
+        'tp': tp,
+        't': now.isoformat(),
+        'ps': 0,
+        'rr': 3.0,
+        '_simple_format': True,  # Internal flag
+    }
+
+
+# ============================================================
 # Signal Webhook (Main Endpoint)
 # ============================================================
 
@@ -98,7 +159,8 @@ def receive_signal():
         try:
             body = request.get_json(silent=True)
             if body and isinstance(body, dict):
-                api_key = body.get('api_key', '')
+                # Support both 'api_key' (standard) and 'k' (ultra-simple format)
+                api_key = body.get('api_key', '') or body.get('k', '')
         except Exception:
             pass
         if not api_key:
@@ -111,6 +173,13 @@ def receive_signal():
     data = request.get_json(silent=True)
     if not data:
         return jsonify({'error': 'Invalid JSON payload'}), 400
+
+    # ── Ultra-simple format detection ──
+    # TradingView alert message: {"k":"API_KEY","p":"GBPJPY","d":"LONG","pr":"214.100"}
+    # Convert to compact format the existing processor understands.
+    if 'k' in data and 'p' in data and 'd' in data and 'event' not in data and 'e' not in data:
+        data = _expand_simple_format(data)
+        logger.info(f"Converted ultra-simple webhook to compact format: {data.get('id')}")
 
     # Validate
     is_valid, error_msg = validate_alert(data)
