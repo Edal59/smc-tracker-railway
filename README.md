@@ -47,6 +47,9 @@ In Railway dashboard → your project → **Variables** tab:
 | `REQUIRE_AUTH` | `true` | ✅ Yes |
 | `LOG_LEVEL` | `INFO` | Optional |
 | `PRICE_TRACKER_ENABLED` | `false` | Optional |
+| `PRICE_PROVIDER` | `twelve_data` | Optional (required if price tracker enabled) |
+| `PRICE_API_KEY` | `your-twelvedata-key` | Optional (required if price tracker enabled) |
+| `PRICE_POLL_INTERVAL` | `60` | Optional (recommended for TwelveData rate limits) |
 
 > 💡 Railway automatically sets `PORT` — don't set it manually.
 
@@ -121,6 +124,8 @@ Visit your Railway URL in a browser to see:
 | `PRICE_TRACKER_ENABLED` | `false` | Enable background price tracking |
 | `PRICE_PROVIDER` | `mock` | Price provider (mock/twelve_data/alpha_vantage) |
 | `PRICE_API_KEY` | *(empty)* | API key for price provider |
+| `PRICE_POLL_INTERVAL` | `15` | Poll interval in seconds (use `60` for TwelveData free-tier safety) |
+| `TIMEOUT_MINUTES` | `4320` | Auto-timeout for unresolved signals |
 
 ---
 
