@@ -10,6 +10,11 @@ from flask import Blueprint, request, jsonify
 from src.config import config
 from src.webhook_server.validators import validate_alert
 from src.tracker.processor import process_alert
+from src.oie_processor import is_oie_payload, normalize_oie_payload, oie_to_legacy_compact
+from src.oie_database import (
+    insert_opportunity, get_opportunity, get_opportunities,
+    count_opportunities, get_oie_summary
+)
 from src.database import (
     get_signal, get_signals, get_active_signals, count_signals,
     get_events, log_system
@@ -174,6 +179,52 @@ def receive_signal():
     if not data:
         return jsonify({'error': 'Invalid JSON payload'}), 400
 
+    # ── v17.14.1 OIE format detection ──
+    # OIE payloads have type: "sniper_long"|"sniper_short"|"retrace_long"|"retrace_short"
+    # and version starting with "v17.14"
+    if is_oie_payload(data):
+        try:
+            # 1. Normalize into opportunity record
+            opp_record = normalize_oie_payload(data)
+            opp_id = insert_opportunity(opp_record)
+
+            # 2. Also feed into legacy signals pipeline for backward compat
+            legacy_data = oie_to_legacy_compact(data)
+            try:
+                legacy_signal_id = process_alert(legacy_data)
+                logger.info(f"OIE: Legacy bridge signal created: {legacy_signal_id}")
+            except Exception as le:
+                logger.warning(f"OIE: Legacy bridge failed (non-critical): {le}")
+                legacy_signal_id = None
+
+            log_system('INFO', 'webhook',
+                       f"OIE opportunity #{opp_id}: {opp_record['setup_type']} "
+                       f"{opp_record['pair']} | {opp_record['kill_zone']} | "
+                       f"RR {opp_record['rr_ratio']}:1",
+                       {'opportunity_id': opp_id, 'legacy_signal': legacy_signal_id})
+
+            logger.info(
+                f"[OIE] ✅ {opp_record['setup_type']} on {opp_record['pair']} "
+                f"| {opp_record['kill_zone']} session | {opp_record['h4_bias']} bias "
+                f"| RR {opp_record['rr_ratio']}:1 | POI {opp_record['poi_score']}"
+            )
+
+            return jsonify({
+                'status': 'ok',
+                'pipeline': 'oie',
+                'opportunity_id': opp_id,
+                'setup_type': opp_record['setup_type'],
+                'pair': opp_record['pair'],
+                'kill_zone': opp_record['kill_zone'],
+                'rr_ratio': opp_record['rr_ratio'],
+                'legacy_signal_id': legacy_signal_id,
+            }), 200
+
+        except Exception as e:
+            logger.error(f"OIE processing error: {e}", exc_info=True)
+            log_system('ERROR', 'webhook', f"OIE error: {str(e)}", {'data': str(data)[:500]})
+            return jsonify({'error': 'OIE processing failed', 'message': str(e)}), 500
+
     # ── Ultra-simple format detection ──
     # TradingView alert message: {"k":"API_KEY","p":"GBPJPY","d":"LONG","pr":"214.100"}
     # Convert to compact format the existing processor understands.
@@ -327,3 +378,51 @@ def backfill_signal():
     except Exception as e:
         logger.error(f"Backfill error: {e}", exc_info=True)
         return jsonify({'error': str(e)}), 500
+
+
+# ============================================================
+# OIE — Opportunity Intelligence Engine Endpoints
+# ============================================================
+
+@api_bp.route('/opportunities', methods=['GET'])
+@require_api_key
+def list_opportunities():
+    """List opportunities with optional filters."""
+    pair = request.args.get('pair')
+    status = request.args.get('status')
+    setup_type = request.args.get('setup_type')
+    kill_zone = request.args.get('kill_zone')
+    limit = min(int(request.args.get('limit', 100)), 500)
+    offset = int(request.args.get('offset', 0))
+
+    opps = get_opportunities(pair=pair, status=status, setup_type=setup_type,
+                             kill_zone=kill_zone, limit=limit, offset=offset)
+    total = count_opportunities(pair=pair, status=status)
+    return jsonify({
+        'opportunities': opps,
+        'total': total,
+        'limit': limit,
+        'offset': offset,
+    })
+
+
+@api_bp.route('/opportunities/<int:opp_id>', methods=['GET'])
+@require_api_key
+def get_opportunity_detail(opp_id):
+    """Get opportunity detail with outcomes."""
+    from src.oie_database import get_outcomes
+    opp = get_opportunity(opp_id)
+    if not opp:
+        return jsonify({'error': 'Opportunity not found'}), 404
+    opp['outcomes'] = get_outcomes(opp_id)
+    return jsonify(opp)
+
+
+@api_bp.route('/opportunities/summary', methods=['GET'])
+@require_api_key
+def opportunities_summary():
+    """Get OIE performance summary."""
+    pair = request.args.get('pair')
+    days = request.args.get('days', type=int)
+    summary = get_oie_summary(pair=pair, days=days)
+    return jsonify(summary)

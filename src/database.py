@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 
 SCHEMA_PATH = os.path.join(PROJECT_ROOT, 'schemas', 'schema.sql')
 MIGRATION_PATH = os.path.join(PROJECT_ROOT, 'schemas', 'migrate_trade_tracking.sql')
+OIE_MIGRATION_PATH = os.path.join(PROJECT_ROOT, 'schemas', 'migrate_v17_14_oie.sql')
 
 
 def get_db_path():
@@ -51,6 +52,27 @@ def _run_migrations(conn):
         logger.info("Trade tracking migration complete")
 
 
+def _run_oie_migration(conn):
+    """Run OIE (Opportunity Intelligence Engine) migration for v17.14.1 support."""
+    # Check if opportunities table already exists
+    cursor = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='opportunities'"
+    )
+    if cursor.fetchone():
+        logger.info("OIE tables already exist, skipping migration")
+        return
+
+    if os.path.exists(OIE_MIGRATION_PATH):
+        logger.info("Running OIE v17.14.1 migration...")
+        with open(OIE_MIGRATION_PATH, 'r') as f:
+            migration_sql = f.read()
+        conn.executescript(migration_sql)
+        conn.commit()
+        logger.info("OIE v17.14.1 migration complete")
+    else:
+        logger.warning(f"OIE migration file not found: {OIE_MIGRATION_PATH}")
+
+
 def init_db(db_path=None):
     """Initialize database with schema."""
     path = db_path or get_db_path()
@@ -64,6 +86,8 @@ def init_db(db_path=None):
         conn.commit()
         # Run migrations for existing databases
         _run_migrations(conn)
+        # Run OIE migration for v17.14.1 opportunity tracking
+        _run_oie_migration(conn)
         logger.info(f"Database initialized at {path}")
     finally:
         conn.close()
