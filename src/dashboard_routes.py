@@ -14,6 +14,10 @@ from src.database import (
     mark_trade, get_trade_analytics, get_pip_size
 )
 from src.analytics.metrics import get_full_metrics, get_cumulative_pnl
+from src.oie_database import (
+    get_opportunities, count_opportunities, get_opportunity,
+    get_oie_summary
+)
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +34,12 @@ def index():
 def trades():
     """Trade log page."""
     return render_template('trades.html', config=config)
+
+
+@dashboard_bp.route('/opportunities')
+def opportunities():
+    """OIE Opportunities page."""
+    return render_template('opportunities.html', config=config)
 
 
 @dashboard_bp.route('/settings')
@@ -180,6 +190,56 @@ def dash_analytics():
     pair = request.args.get('pair')
     analytics = get_trade_analytics(pair=pair)
     return jsonify(analytics)
+
+
+# ============================================================
+# OIE Dashboard API endpoints
+# ============================================================
+
+@dashboard_bp.route('/dash/api/oie/summary')
+def dash_oie_summary():
+    """Get OIE summary stats."""
+    pair = request.args.get('pair')
+    days = request.args.get('days', type=int)
+    try:
+        summary = get_oie_summary(pair=pair, days=days)
+        return jsonify(summary)
+    except Exception as e:
+        logger.error(f"OIE summary error: {e}", exc_info=True)
+        return jsonify({'total': 0, 'avg_rr': 0, 'sniper_count': 0,
+                        'retrace_count': 0, 'avg_poi': 0, 'active_count': 0})
+
+
+@dashboard_bp.route('/dash/api/oie/opportunities')
+def dash_oie_opportunities():
+    """Get OIE opportunities list."""
+    pair = request.args.get('pair')
+    status = request.args.get('status')
+    setup_type = request.args.get('setup_type')
+    kill_zone = request.args.get('kill_zone')
+    limit = min(int(request.args.get('limit', 50)), 200)
+    offset = int(request.args.get('offset', 0))
+    try:
+        opps = get_opportunities(pair=pair, status=status, setup_type=setup_type,
+                                 kill_zone=kill_zone, limit=limit, offset=offset)
+        total = count_opportunities(pair=pair, status=status)
+        return jsonify({'opportunities': opps, 'total': total, 'limit': limit, 'offset': offset})
+    except Exception as e:
+        logger.error(f"OIE opportunities error: {e}", exc_info=True)
+        return jsonify({'opportunities': [], 'total': 0, 'limit': limit, 'offset': offset})
+
+
+@dashboard_bp.route('/dash/api/oie/opportunity/<int:opp_id>')
+def dash_oie_opportunity_detail(opp_id):
+    """Get OIE opportunity detail."""
+    try:
+        opp = get_opportunity(opp_id)
+        if not opp:
+            return jsonify({'error': 'Not found'}), 404
+        return jsonify(opp)
+    except Exception as e:
+        logger.error(f"OIE opportunity detail error: {e}", exc_info=True)
+        return jsonify({'error': str(e)}), 500
 
 
 @dashboard_bp.route('/dash/api/reset-database', methods=['POST'])

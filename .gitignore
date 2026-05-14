@@ -34,3 +34,10 @@ Thumbs.db
 
 # Railway
 .nixpacks/
+
+
+# Frontend (Next.js)
+tradex-frontend/node_modules/
+tradex-frontend/.next/
+tradex-frontend/out/
+tradex-frontend/.env.local

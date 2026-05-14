@@ -1,0 +1,150 @@
+{% extends "base.html" %}
+{% block title %}Opportunities — TradeX OIE v17.14.1{% endblock %}
+
+{% block content %}
+<!-- OIE Summary Cards -->
+<div class="row g-3 mb-4">
+    <div class="col-12">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h5 class="mb-0">
+                <i class="bi bi-bullseye me-1"></i> Opportunity Intelligence Engine
+                <span class="badge bg-info ms-2">v17.14.1</span>
+            </h5>
+            <div class="d-flex gap-2">
+                <select class="form-select form-select-sm" id="filter-pair" style="width:auto;">
+                    <option value="">All Pairs</option>
+                </select>
+                <select class="form-select form-select-sm" id="filter-setup" style="width:auto;">
+                    <option value="">All Setups</option>
+                    <option value="sniper_long">Sniper Long</option>
+                    <option value="sniper_short">Sniper Short</option>
+                    <option value="retrace_long">Retrace Long</option>
+                    <option value="retrace_short">Retrace Short</option>
+                </select>
+                <select class="form-select form-select-sm" id="filter-kz" style="width:auto;">
+                    <option value="">All Kill Zones</option>
+                    <option value="London">London</option>
+                    <option value="NY AM">NY AM</option>
+                    <option value="NY PM">NY PM</option>
+                    <option value="Asian">Asian</option>
+                </select>
+                <button class="btn btn-sm btn-outline-success" onclick="loadOpportunities()">
+                    <i class="bi bi-arrow-clockwise"></i> Refresh
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Summary Stats -->
+<div class="row g-3 mb-4" id="oie-summary">
+    <div class="col-md-2 col-6">
+        <div class="card stat-card">
+            <div class="card-body text-center">
+                <div class="text-muted small">Total Opps</div>
+                <div class="fs-3 fw-bold" id="stat-total">0</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-2 col-6">
+        <div class="card stat-card">
+            <div class="card-body text-center">
+                <div class="text-muted small">Avg R:R</div>
+                <div class="fs-3 fw-bold text-info" id="stat-avg-rr">0.0</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-2 col-6">
+        <div class="card stat-card">
+            <div class="card-body text-center">
+                <div class="text-muted small">Sniper</div>
+                <div class="fs-3 fw-bold text-success" id="stat-sniper">0</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-2 col-6">
+        <div class="card stat-card">
+            <div class="card-body text-center">
+                <div class="text-muted small">Retrace</div>
+                <div class="fs-3 fw-bold text-warning" id="stat-retrace">0</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-2 col-6">
+        <div class="card stat-card">
+            <div class="card-body text-center">
+                <div class="text-muted small">Avg POI</div>
+                <div class="fs-3 fw-bold" id="stat-avg-poi">0</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-2 col-6">
+        <div class="card stat-card">
+            <div class="card-body text-center">
+                <div class="text-muted small">Active</div>
+                <div class="fs-3 fw-bold text-primary" id="stat-active">0</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Opportunities Table -->
+<div class="card mb-4">
+    <div class="card-header d-flex justify-content-between">
+        <span><i class="bi bi-lightning-charge me-1"></i> Live Opportunities</span>
+        <small class="text-muted" id="opp-count">0 opportunities</small>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-dark table-hover table-sm mb-0">
+                <thead>
+                    <tr>
+                        <th>Time</th>
+                        <th>Pair</th>
+                        <th>Setup</th>
+                        <th>H4 Bias</th>
+                        <th>P&D Zone</th>
+                        <th>Kill Zone</th>
+                        <th>Guardian</th>
+                        <th>Entry</th>
+                        <th>SL</th>
+                        <th>TP</th>
+                        <th>R:R</th>
+                        <th>POI</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody id="opp-table"></tbody>
+            </table>
+        </div>
+    </div>
+    <div class="card-footer d-flex justify-content-between align-items-center">
+        <small class="text-muted" id="opp-info">Showing 0 opportunities</small>
+        <div>
+            <button class="btn btn-sm btn-outline-secondary" id="btn-prev" onclick="prevPage()" disabled>
+                <i class="bi bi-chevron-left"></i> Prev
+            </button>
+            <button class="btn btn-sm btn-outline-secondary" id="btn-next" onclick="nextPage()">
+                Next <i class="bi bi-chevron-right"></i>
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Opportunity Detail Modal -->
+<div class="modal fade" id="oppModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content bg-dark">
+            <div class="modal-header">
+                <h5 class="modal-title" id="opp-modal-title">Opportunity Detail</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="opp-modal-body">Loading...</div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/opportunities.js"></script>
+{% endblock %}

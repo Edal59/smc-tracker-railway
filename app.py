@@ -56,7 +56,7 @@ setup_logging()
 logger = logging.getLogger(__name__)
 
 logger.info("=" * 60)
-logger.info("SMC Performance Tracker — Cloud Mode")
+logger.info("TradeX OIE v17.14.1 — Cloud Mode")
 logger.info("=" * 60)
 
 # Initialize database

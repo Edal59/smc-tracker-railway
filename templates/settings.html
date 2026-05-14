@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Setup Guide — SMC Performance Tracker{% endblock %}
+{% block title %}Setup Guide — TradeX OIE v17.14.1{% endblock %}
 
 {% block content %}
 <div class="row g-4">
@@ -33,48 +33,92 @@
         <!-- Alert Template -->
         <div class="card mt-3">
             <div class="card-header">
-                <i class="bi bi-code-square me-1"></i> TradingView Alert Message Template
+                <i class="bi bi-code-square me-1"></i> v17.14.1 OIE Alert Message Templates
             </div>
             <div class="card-body">
-                <p class="text-muted small">Copy this template into your TradingView alert message body:</p>
-                <pre class="bg-dark border rounded p-3" id="alert-template">{
+                <p class="text-muted small">
+                    <span class="badge bg-info">v17.14.1</span>
+                    The SMC Premium/Discount Confluence Engine fires <strong>4 alert types</strong>.
+                    Each alert uses <code>{{ "{{plot_X}}" }}</code> placeholders that return numeric codes.
+                    The backend OIE decoder converts them to human-readable strings automatically.
+                </p>
+
+                <h6><i class="bi bi-crosshair me-1"></i> Sniper Entry Alert:</h6>
+                <pre class="bg-dark border rounded p-3" id="sniper-template">{
   "api_key": "{{ config.api_key }}",
-  "event": "{{strategy.order.action}}",
-  "pair": "{{ticker}}",
-  "direction": "{{strategy.order.action}}",
-  "entry_price": {{close}},
-  "signal_id": "{{ticker}}_{{timenow}}_{{strategy.order.action}}"
+  "version": "v17.14.1",
+  "type": "sniper_long",
+  "symbol": "{{ "{{ticker}}" }}",
+  "entry_price": {{ "{{plot_0}}" }},
+  "stop_loss": {{ "{{plot_1}}" }},
+  "take_profit": {{ "{{plot_2}}" }},
+  "h4_bias": "{{ "{{plot_3}}" }}",
+  "p_d_zone": "{{ "{{plot_4}}" }}",
+  "guardian": "{{ "{{plot_5}}" }}",
+  "poi": "{{ "{{plot_6}}" }}",
+  "quality": "{{ "{{plot_7}}" }}",
+  "confluence": "{{ "{{plot_8}}" }}",
+  "dt_stage": "{{ "{{plot_9}}" }}",
+  "setup_id": "{{ "{{plot_10}}" }}",
+  "kill_zone": "{{ "{{plot_12}}" }}",
+  "timestamp": "{{ "{{timenow}}" }}"
 }</pre>
-                <button class="btn btn-sm btn-outline-info" onclick="copyTemplate()">
-                    <i class="bi bi-clipboard"></i> Copy Template
+                <button class="btn btn-sm btn-outline-info mb-3" onclick="copyEl('sniper-template')">
+                    <i class="bi bi-clipboard"></i> Copy Sniper Template
+                </button>
+
+                <h6><i class="bi bi-arrow-return-right me-1"></i> Retrace Entry Alert:</h6>
+                <pre class="bg-dark border rounded p-3" id="retrace-template">{
+  "api_key": "{{ config.api_key }}",
+  "version": "v17.14.1",
+  "type": "retrace_long",
+  "symbol": "{{ "{{ticker}}" }}",
+  "suggested_entry": {{ "{{plot_0}}" }},
+  "target_sl": {{ "{{plot_1}}" }},
+  "target_tp": {{ "{{plot_2}}" }},
+  "h4_bias": "{{ "{{plot_3}}" }}",
+  "p_d_zone": "{{ "{{plot_4}}" }}",
+  "guardian": "{{ "{{plot_5}}" }}",
+  "poi": "{{ "{{plot_6}}" }}",
+  "quality": "{{ "{{plot_7}}" }}",
+  "confluence": "{{ "{{plot_8}}" }}",
+  "setup_id": "{{ "{{plot_10}}" }}",
+  "kill_zone": "{{ "{{plot_12}}" }}",
+  "timestamp": "{{ "{{timenow}}" }}"
+}</pre>
+                <button class="btn btn-sm btn-outline-info mb-3" onclick="copyEl('retrace-template')">
+                    <i class="bi bi-clipboard"></i> Copy Retrace Template
                 </button>
 
                 <hr>
-                <h6>Full Signal Format (for SMC Indicator):</h6>
-                <pre class="bg-dark border rounded p-3" id="full-template">{
-  "api_key": "{{ config.api_key }}",
-  "event": "SIGNAL_ENTRY",
-  "signal_id": "{{ticker}}_{{timenow}}_LONG",
-  "timestamp": "{{timenow}}",
-  "signal": {
-    "pair": "{{ticker}}",
-    "direction": "LONG",
-    "type": "STANDARD",
-    "entry_price": {{close}},
-    "stop_loss": 0,
-    "take_profit": 0,
-    "target_rr": 3.0
-  },
-  "hud": {
-    "poi_score": 5,
-    "kill_zone": "London KZ",
-    "kill_zone_id": 1,
-    "entry_model": "Refined OB",
-    "entry_model_id": 2,
-    "structure": "BULLISH",
-    "zone": "DISCOUNT"
-  }
-}</pre>
+                <h6><i class="bi bi-key me-1"></i> Decode Reference (v17.14.1):</h6>
+                <div class="row g-2 small">
+                    <div class="col-md-3">
+                        <strong>H4 Bias</strong><br>
+                        <code>1</code> = Bullish<br>
+                        <code>-1</code> = Bearish<br>
+                        <code>0</code> = Neutral
+                    </div>
+                    <div class="col-md-3">
+                        <strong>P&D Zone</strong><br>
+                        <code>1</code> = Premium<br>
+                        <code>0</code> = Discount<br>
+                        <code>-1</code> = Equilibrium
+                    </div>
+                    <div class="col-md-3">
+                        <strong>Guardian</strong><br>
+                        <code>1/2</code> = Sniper Buy/Sell<br>
+                        <code>3/4</code> = Retrace Buy/Sell<br>
+                        <code>5/6</code> = Trap Buy/Sell
+                    </div>
+                    <div class="col-md-3">
+                        <strong>Kill Zone</strong><br>
+                        <code>1</code> = London<br>
+                        <code>2</code> = NY AM<br>
+                        <code>3</code> = NY PM<br>
+                        <code>4</code> = Asian
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -117,7 +161,7 @@
                     <tr><td class="text-muted">Auth Required</td><td>{{ 'Yes' if config.require_auth else 'No' }}</td></tr>
                     <tr><td class="text-muted">API Key Set</td><td>{{ 'Yes ✓' if config.api_key else 'No ⚠️' }}</td></tr>
                     <tr><td class="text-muted">Price Tracker</td><td>{{ 'Enabled' if config.price_tracker_enabled else 'Disabled' }}</td></tr>
-                    <tr><td class="text-muted">Version</td><td>1.0.0</td></tr>
+                    <tr><td class="text-muted">Version</td><td><span class="badge bg-info">v17.14.1</span> OIE</td></tr>
                 </table>
             </div>
         </div>
@@ -128,6 +172,7 @@
                 <i class="bi bi-hdd-network me-1"></i> API Endpoints
             </div>
             <div class="card-body small">
+                <strong class="text-info">Core</strong><br>
                 <code>POST /api/v1/signal</code> — Receive webhook<br>
                 <code>GET  /api/v1/health</code> — Health check<br>
                 <code>GET  /api/v1/signals</code> — List signals<br>
@@ -135,7 +180,12 @@
                 <code>GET  /api/v1/pnl</code> — P&L curve data<br>
                 <code>GET  /api/v1/report</code> — Full JSON report<br>
                 <code>GET  /api/v1/export/csv</code> — CSV export<br>
-                <p class="text-muted mt-2 mb-0">API endpoints require the <code>X-API-Key</code> header or <code>api_key</code> in the request body.</p>
+                <hr class="my-2">
+                <strong class="text-success">OIE v17.14.1</strong><br>
+                <code>GET  /api/v1/opportunities</code> — List opps<br>
+                <code>GET  /api/v1/opportunities/&lt;id&gt;</code> — Detail<br>
+                <code>GET  /api/v1/opportunities/summary</code> — Summary<br>
+                <p class="text-muted mt-2 mb-0">API endpoints require <code>X-API-Key</code> header or <code>api_key</code> in the request body.</p>
             </div>
         </div>
     </div>
@@ -153,11 +203,13 @@ function copyText(id) {
     });
 }
 
-function copyTemplate() {
-    const text = document.getElementById('alert-template').textContent;
+function copyEl(id) {
+    const text = document.getElementById(id).textContent;
     navigator.clipboard.writeText(text).then(() => {
-        event.target.innerHTML = '<i class="bi bi-check"></i> Copied!';
-        setTimeout(() => event.target.innerHTML = '<i class="bi bi-clipboard"></i> Copy Template', 2000);
+        const btn = event.target.closest('button');
+        const orig = btn.innerHTML;
+        btn.innerHTML = '<i class="bi bi-check"></i> Copied!';
+        setTimeout(() => btn.innerHTML = orig, 2000);
     });
 }
 </script>
