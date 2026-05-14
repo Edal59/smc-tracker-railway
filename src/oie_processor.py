@@ -149,14 +149,15 @@ def normalize_oie_payload(payload: dict) -> dict:
     symbol = symbol.upper().strip()
 
     # --- Extract price levels ---
+    # Support both v17.14.1 field names and v17.14 shorthand with fallbacks
     if is_sniper_payload(payload):
-        entry_price = _to_float(payload.get("entry_price"))
-        sl_price = _to_float(payload.get("stop_loss"))
-        tp_price = _to_float(payload.get("take_profit"))
+        entry_price = _to_float(payload.get("entry_price") or payload.get("entry"))
+        sl_price = _to_float(payload.get("stop_loss") or payload.get("sl"))
+        tp_price = _to_float(payload.get("take_profit") or payload.get("tp"))
     elif is_retrace_payload(payload):
-        entry_price = _to_float(payload.get("suggested_entry"))
-        sl_price = _to_float(payload.get("target_sl"))
-        tp_price = _to_float(payload.get("target_tp"))
+        entry_price = _to_float(payload.get("suggested_entry") or payload.get("entry"))
+        sl_price = _to_float(payload.get("target_sl") or payload.get("sl"))
+        tp_price = _to_float(payload.get("target_tp") or payload.get("tp"))
     else:
         # Legacy fallback
         entry_price = _to_float(payload.get("entry_price") or payload.get("entry"))
