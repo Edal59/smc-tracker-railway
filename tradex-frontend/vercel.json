@@ -1,20 +1,5 @@
 {
   "version": 2,
   "buildCommand": "npm run build",
-  "outputDirectory": ".next",
-  "env": {
-    "NEXT_PUBLIC_API_URL": {
-      "description": "Railway backend API endpoint",
-      "required": true
-    },
-    "NEXT_PUBLIC_API_KEY": {
-      "description": "API authentication key for Railway backend",
-      "required": true
-    }
-  },
-  "functions": {
-    "api/**": {
-      "runtime": "nodejs20.x"
-    }
-  }
+  "outputDirectory": ".next"
 }
