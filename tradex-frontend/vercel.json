@@ -12,7 +12,6 @@
       "required": true
     }
   },
-  "envPrefix": "NEXT_PUBLIC_",
   "functions": {
     "api/**": {
       "runtime": "nodejs20.x"
