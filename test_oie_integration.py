@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Integration test for OIE v17.14.1 webhook pipeline.
+Integration test for OIE v17.15 webhook pipeline.
 Tests the full flow: webhook → normalize → DB insert → query.
 """
 import os
@@ -87,7 +87,7 @@ print("STEP 3: OIE Normalizer Tests")
 print("=" * 70)
 from src.oie_processor import normalize_oie_payload, is_oie_payload, oie_to_legacy_compact
 
-# Test v17.14.1 Sniper Long payload
+# Test v17.15 Sniper Long payload
 sniper_long_payload = {
     "type": "sniper_long",
     "setup_id": "EURUSD_20260514_143000",
@@ -104,7 +104,7 @@ sniper_long_payload = {
     "kill_zone": "2",
     "guardian": "1",
     "timestamp": "2026-05-14T14:30:00Z",
-    "version": "v17.14.1"
+    "version": "v17.15"
 }
 
 print(f"\n  is_oie_payload: {is_oie_payload(sniper_long_payload)} (expected True)")
@@ -126,7 +126,7 @@ print(f"     poi_score: {norm['poi_score']} (expected 4)")
 print(f"     confluence: {norm['confluence']} (expected 5)")
 print(f"     dt_stage: {norm['dt_stage']} (expected 5)")
 
-# Test v17.14.1 Retrace Short payload
+# Test v17.15 Retrace Short payload
 retrace_short_payload = {
     "type": "retrace_short",
     "setup_id": "GBPJPY_20260514_091500",
@@ -140,7 +140,7 @@ retrace_short_payload = {
     "zone": "-1",
     "kill_zone": "1",
     "timestamp": "2026-05-14T09:15:00Z",
-    "version": "v17.14.1"
+    "version": "v17.15"
 }
 
 norm2 = normalize_oie_payload(retrace_short_payload)
@@ -190,7 +190,7 @@ print(f"\n  POST /api/v1/signal (retrace_short):")
 print(f"    Status: {resp2.status_code}")
 print(f"    Response: {json.dumps(result2, indent=2)}")
 
-# Test v17.14.1 without kill_zone (v17.14 compat)
+# Test v17.15 without kill_zone (v17.14 compat)
 v1714_payload = {
     "type": "sniper_short",
     "setup_id": "XAUUSD_20260514_150000",

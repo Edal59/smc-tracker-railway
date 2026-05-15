@@ -90,7 +90,7 @@ export default async function DashboardPage() {
         <div>
           <h1 className="text-2xl font-bold">Performance Dashboard</h1>
           <p className="text-sm text-zinc-500">
-            Real-time v17.14.1 OIE tracking — kill zones, H4 bias, P&D zones, guardian confluence.
+            Real-time v17.15 OIE tracking — kill zones, H4 bias, P&D zones, guardian confluence.
           </p>
         </div>
         <div className="flex items-center gap-2 text-xs text-zinc-500">
@@ -138,7 +138,7 @@ export default async function DashboardPage() {
         <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-6">
           <h3 className="text-sm font-semibold text-zinc-400 uppercase tracking-wider mb-3">System Architecture</h3>
           <div className="space-y-2 text-sm">
-            <div className="flex justify-between"><span className="text-zinc-500">Pine Script</span><span className="font-mono text-emerald-400">v17.14.1</span></div>
+            <div className="flex justify-between"><span className="text-zinc-500">Pine Script</span><span className="font-mono text-emerald-400">v17.15</span></div>
             <div className="flex justify-between"><span className="text-zinc-500">Alert Types</span><span className="font-mono">4 (Sniper + Retrace × Long/Short)</span></div>
             <div className="flex justify-between"><span className="text-zinc-500">Currency Pairs</span><span className="font-mono">9</span></div>
             <div className="flex justify-between"><span className="text-zinc-500">Active Alerts</span><span className="font-mono">36</span></div>
@@ -158,7 +158,7 @@ export default async function DashboardPage() {
 
       {/* Decode Reference */}
       <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-6">
-        <h3 className="text-sm font-semibold text-zinc-400 uppercase tracking-wider mb-4">v17.14.1 Decode Reference</h3>
+        <h3 className="text-sm font-semibold text-zinc-400 uppercase tracking-wider mb-4">v17.15 Decode Reference</h3>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-6 text-sm">
           <div>
             <h4 className="font-semibold text-zinc-300 mb-2">H4 Bias</h4>

@@ -1,5 +1,5 @@
 -- ============================================================================
--- TradeX Tracker — SQLite Migration for SMC v17.14.1
+-- TradeX Tracker — SQLite Migration for SMC v17.15
 -- Opportunity Intelligence Engine (OIE) Schema
 -- ============================================================================
 -- Adapted from PostgreSQL migration to SQLite for Railway deployment.
@@ -45,7 +45,7 @@ CREATE TABLE IF NOT EXISTS opportunities (
 
     -- Raw payload for audit
     raw_payload     TEXT,                                     -- JSON string
-    version         TEXT        DEFAULT 'v17.14.1',
+    version         TEXT        DEFAULT 'v17.15',
 
     -- Link to legacy signals table (if migrated from existing signal)
     legacy_signal_id TEXT                                     -- FK to signals.signal_id if applicable

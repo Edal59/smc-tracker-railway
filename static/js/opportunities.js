@@ -1,4 +1,4 @@
-// TradeX OIE v17.14.1 — Opportunities Dashboard JS
+// TradeX OIE v17.15 — Opportunities Dashboard JS
 
 let currentOffset = 0;
 const pageSize = 50;
@@ -61,7 +61,7 @@ async function loadOpportunities() {
 function renderOpportunities(opps) {
     const tbody = document.getElementById('opp-table');
     if (!opps || opps.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="13" class="text-center text-muted py-4">No opportunities yet. Configure v17.14.1 TradingView alerts to get started!</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="13" class="text-center text-muted py-4">No opportunities yet. Configure v17.15 TradingView alerts to get started!</td></tr>';
         return;
     }
     tbody.innerHTML = opps.map(o => {
