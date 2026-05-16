@@ -48,7 +48,7 @@ def insert_opportunity(opp: dict, db_path=None) -> int:
         opp.get("status", "identified"),
         opp.get("identified_at", datetime.now(timezone.utc).isoformat()),
         opp.get("raw_payload"),
-        opp.get("version", "v17.16"),
+        opp.get("version", "v17.17"),
     )
 
     with get_connection(db_path) as conn:

@@ -56,7 +56,7 @@ setup_logging()
 logger = logging.getLogger(__name__)
 
 logger.info("=" * 60)
-logger.info("TradeX OIE v17.16 — Cloud Mode")
+logger.info("TradeX OIE v17.17 — Cloud Mode")
 logger.info("=" * 60)
 
 # Initialize database
