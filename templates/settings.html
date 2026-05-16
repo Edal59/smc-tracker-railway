@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Setup Guide — TradeX OIE v17.15{% endblock %}
+{% block title %}Setup Guide — TradeX OIE v17.16{% endblock %}
 
 {% block content %}
 <div class="row g-4">
@@ -33,11 +33,11 @@
         <!-- Alert Template -->
         <div class="card mt-3">
             <div class="card-header">
-                <i class="bi bi-code-square me-1"></i> v17.15 OIE Alert Message Templates
+                <i class="bi bi-code-square me-1"></i> v17.16 OIE Alert Message Templates
             </div>
             <div class="card-body">
                 <p class="text-muted small">
-                    <span class="badge bg-info">v17.15</span>
+                    <span class="badge bg-info">v17.16</span>
                     The SMC Premium/Discount Confluence Engine fires <strong>4 alert types</strong>.
                     Each alert uses <code>{{ "{{plot_X}}" }}</code> placeholders that return numeric codes.
                     The backend OIE decoder converts them to human-readable strings automatically.
@@ -46,7 +46,7 @@
                 <h6><i class="bi bi-crosshair me-1"></i> Sniper Entry Alert:</h6>
                 <pre class="bg-dark border rounded p-3" id="sniper-template">{
   "api_key": "{{ config.api_key }}",
-  "version": "v17.15",
+  "version": "v17.16",
   "type": "sniper_long",
   "symbol": "{{ "{{ticker}}" }}",
   "entry_price": {{ "{{plot_0}}" }},
@@ -70,7 +70,7 @@
                 <h6><i class="bi bi-arrow-return-right me-1"></i> Retrace Entry Alert:</h6>
                 <pre class="bg-dark border rounded p-3" id="retrace-template">{
   "api_key": "{{ config.api_key }}",
-  "version": "v17.15",
+  "version": "v17.16",
   "type": "retrace_long",
   "symbol": "{{ "{{ticker}}" }}",
   "suggested_entry": {{ "{{plot_0}}" }},
@@ -91,7 +91,7 @@
                 </button>
 
                 <hr>
-                <h6><i class="bi bi-key me-1"></i> Decode Reference (v17.15):</h6>
+                <h6><i class="bi bi-key me-1"></i> Decode Reference (v17.16):</h6>
                 <div class="row g-2 small">
                     <div class="col-md-3">
                         <strong>H4 Bias</strong><br>
@@ -161,7 +161,7 @@
                     <tr><td class="text-muted">Auth Required</td><td>{{ 'Yes' if config.require_auth else 'No' }}</td></tr>
                     <tr><td class="text-muted">API Key Set</td><td>{{ 'Yes ✓' if config.api_key else 'No ⚠️' }}</td></tr>
                     <tr><td class="text-muted">Price Tracker</td><td>{{ 'Enabled' if config.price_tracker_enabled else 'Disabled' }}</td></tr>
-                    <tr><td class="text-muted">Version</td><td><span class="badge bg-info">v17.15</span> OIE</td></tr>
+                    <tr><td class="text-muted">Version</td><td><span class="badge bg-info">v17.16</span> OIE</td></tr>
                 </table>
             </div>
         </div>
@@ -181,7 +181,7 @@
                 <code>GET  /api/v1/report</code> — Full JSON report<br>
                 <code>GET  /api/v1/export/csv</code> — CSV export<br>
                 <hr class="my-2">
-                <strong class="text-success">OIE v17.15</strong><br>
+                <strong class="text-success">OIE v17.16</strong><br>
                 <code>GET  /api/v1/opportunities</code> — List opps<br>
                 <code>GET  /api/v1/opportunities/&lt;id&gt;</code> — Detail<br>
                 <code>GET  /api/v1/opportunities/summary</code> — Summary<br>
