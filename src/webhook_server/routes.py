@@ -72,7 +72,7 @@ def health_check():
     return jsonify({
         'status': 'ok',
         'service': 'SMC Performance Tracker',
-        'version': 'v17.18',
+        'version': 'v17.19',
     })
 
 
@@ -153,7 +153,7 @@ def receive_signal():
         return jsonify({
             "status": "ok",
             "message": "SMC Performance Tracker Webhook Endpoint",
-            "version": "v17.18",
+            "version": "v17.19",
             "accepts": "POST",
             "endpoint": "/api/v1/signal"
         }), 200
@@ -179,7 +179,7 @@ def receive_signal():
     if not data:
         return jsonify({'error': 'Invalid JSON payload'}), 400
 
-    # ── v17.18 OIE format detection ──
+    # ── v17.19 OIE format detection ──
     # OIE payloads have type: "sniper_long"|"sniper_short"|"retrace_long"|"retrace_short"
     # and version starting with "v17.14"
     if is_oie_payload(data):
