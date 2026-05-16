@@ -1,6 +1,6 @@
 """
 TradeX Tracker — Decoder Functions for SMC Premium/Discount Confluence Engine
-Version: v17.19
+Version: v17.20
 
 Translates numeric codes from Pine Script {{plot_X}} webhook payloads into
 human-readable strings. Webhook payloads deliver all numeric values as
