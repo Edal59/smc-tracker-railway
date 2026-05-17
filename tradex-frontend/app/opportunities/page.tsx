@@ -87,7 +87,7 @@ export default async function OpportunitiesPage() {
         <div>
           <h1 className="text-2xl font-bold">Opportunity Intelligence Engine</h1>
           <p className="text-sm text-zinc-500">
-            v17.20 decoded opportunities — {total} total across all pairs
+            v17.21 decoded opportunities — {total} total across all pairs
           </p>
         </div>
       </div>
@@ -151,7 +151,7 @@ export default async function OpportunitiesPage() {
               {opps.length === 0 ? (
                 <tr>
                   <td colSpan={13} className="px-3 py-12 text-center text-zinc-500">
-                    No opportunities yet. Configure v17.20 TradingView alerts to get started!
+                    No opportunities yet. Configure v17.21 TradingView alerts to get started!
                   </td>
                 </tr>
               ) : (

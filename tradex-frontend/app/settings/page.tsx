@@ -37,7 +37,7 @@ export default async function SettingsPage() {
 
           {/* Alert Templates */}
           <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-6">
-            <h2 className="text-lg font-semibold mb-4">v17.20 Alert Templates</h2>
+            <h2 className="text-lg font-semibold mb-4">v17.21 Alert Templates</h2>
             <p className="text-sm text-zinc-400 mb-4">
               The SMC Premium/Discount Confluence Engine fires <strong>4 alert types</strong>.
               Each uses <code className="text-emerald-400">{"{{plot_X}}"}</code> placeholders that return numeric codes.
@@ -49,7 +49,7 @@ export default async function SettingsPage() {
                 <h3 className="text-sm font-semibold text-emerald-400 mb-2">⊕ Sniper Entry (Long/Short)</h3>
                 <pre className="rounded-md border border-zinc-700 bg-zinc-800 p-4 text-xs font-mono text-zinc-300 overflow-x-auto">{`{
   "api_key": "YOUR_API_KEY",
-  "version": "v17.20",
+  "version": "v17.21",
   "type": "sniper_long",
   "symbol": "{{ticker}}",
   "entry_price": {{plot_0}},
@@ -72,7 +72,7 @@ export default async function SettingsPage() {
                 <h3 className="text-sm font-semibold text-amber-400 mb-2">↩ Retrace Entry (Long/Short)</h3>
                 <pre className="rounded-md border border-zinc-700 bg-zinc-800 p-4 text-xs font-mono text-zinc-300 overflow-x-auto">{`{
   "api_key": "YOUR_API_KEY",
-  "version": "v17.20",
+  "version": "v17.21",
   "type": "retrace_long",
   "symbol": "{{ticker}}",
   "suggested_entry": {{plot_0}},
@@ -182,7 +182,7 @@ export default async function SettingsPage() {
               <div><span className="text-blue-400">GET</span> /api/v1/signals</div>
               <div><span className="text-blue-400">GET</span> /api/v1/metrics</div>
               <div><span className="text-blue-400">GET</span> /api/v1/pnl</div>
-              <div className="text-zinc-500 font-sans font-semibold text-xs mt-2 mb-1">OIE v17.20</div>
+              <div className="text-zinc-500 font-sans font-semibold text-xs mt-2 mb-1">OIE v17.21</div>
               <div><span className="text-blue-400">GET</span> /api/v1/opportunities</div>
               <div><span className="text-blue-400">GET</span> /api/v1/opportunities/summary</div>
               <div><span className="text-blue-400">GET</span> /api/v1/opportunities/:id</div>
