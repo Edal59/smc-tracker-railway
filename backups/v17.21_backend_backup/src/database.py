@@ -53,7 +53,7 @@ def _run_migrations(conn):
 
 
 def _run_oie_migration(conn):
-    """Run OIE (Opportunity Intelligence Engine) migration for v17.25 support."""
+    """Run OIE (Opportunity Intelligence Engine) migration for v17.21 support."""
     # Check if opportunities table already exists
     cursor = conn.execute(
         "SELECT name FROM sqlite_master WHERE type='table' AND name='opportunities'"
@@ -63,12 +63,12 @@ def _run_oie_migration(conn):
         return
 
     if os.path.exists(OIE_MIGRATION_PATH):
-        logger.info("Running OIE v17.25 migration...")
+        logger.info("Running OIE v17.21 migration...")
         with open(OIE_MIGRATION_PATH, 'r') as f:
             migration_sql = f.read()
         conn.executescript(migration_sql)
         conn.commit()
-        logger.info("OIE v17.25 migration complete")
+        logger.info("OIE v17.21 migration complete")
     else:
         logger.warning(f"OIE migration file not found: {OIE_MIGRATION_PATH}")
 
@@ -86,7 +86,7 @@ def init_db(db_path=None):
         conn.commit()
         # Run migrations for existing databases
         _run_migrations(conn)
-        # Run OIE migration for v17.25 opportunity tracking
+        # Run OIE migration for v17.21 opportunity tracking
         _run_oie_migration(conn)
         logger.info(f"Database initialized at {path}")
     finally:

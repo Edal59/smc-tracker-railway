@@ -37,105 +37,54 @@ export default async function SettingsPage() {
 
           {/* Alert Templates */}
           <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-6">
-            <h2 className="text-lg font-semibold mb-4">v17.25 Alert Templates</h2>
+            <h2 className="text-lg font-semibold mb-4">v17.21 Alert Templates</h2>
             <p className="text-sm text-zinc-400 mb-4">
               The SMC Premium/Discount Confluence Engine fires <strong>4 alert types</strong>.
               Each uses <code className="text-emerald-400">{"{{plot_X}}"}</code> placeholders that return numeric codes.
               The OIE decoder converts them automatically.
             </p>
 
-            <p className="text-xs text-amber-300 mb-4">
-              <strong>v17.25 plot map:</strong>{" "}
-              <code>plot_0/1/2</code> long entry/SL/TP ·{" "}
-              <code>plot_3/4/5</code> short entry/SL/TP ·{" "}
-              <code>plot_6</code> quality · <code>plot_7</code> POI ·{" "}
-              <code>plot_8</code> confluence · <code>plot_9</code> dt_stage ·{" "}
-              <code>plot_10</code> H4 bias · <code>plot_11</code> P&amp;D zone ·{" "}
-              <code>plot_12</code> kill zone · <code>plot_13</code> guardian
-            </p>
-
             <div className="space-y-4">
               <div>
-                <h3 className="text-sm font-semibold text-emerald-400 mb-2">⊕ 1. Sniper Long</h3>
+                <h3 className="text-sm font-semibold text-emerald-400 mb-2">⊕ Sniper Entry (Long/Short)</h3>
                 <pre className="rounded-md border border-zinc-700 bg-zinc-800 p-4 text-xs font-mono text-zinc-300 overflow-x-auto">{`{
   "api_key": "YOUR_API_KEY",
-  "version": "v17.25",
+  "version": "v17.21",
   "type": "sniper_long",
-  "setup_id": "dynamic",
   "symbol": "{{ticker}}",
   "entry_price": {{plot_0}},
   "stop_loss": {{plot_1}},
   "take_profit": {{plot_2}},
-  "quality": {{plot_6}},
-  "poi": {{plot_7}},
-  "confluence": {{plot_8}},
-  "dt_stage": {{plot_9}},
-  "h4_bias": "{{plot_10}}",
-  "p_d_zone": "{{plot_11}}",
+  "h4_bias": "{{plot_3}}",
+  "p_d_zone": "{{plot_4}}",
+  "guardian": "{{plot_5}}",
+  "poi": "{{plot_6}}",
+  "quality": "{{plot_7}}",
+  "confluence": "{{plot_8}}",
+  "dt_stage": "{{plot_9}}",
+  "setup_id": "{{plot_10}}",
   "kill_zone": "{{plot_12}}",
-  "guardian": "{{plot_13}}",
   "timestamp": "{{timenow}}"
 }`}</pre>
               </div>
 
               <div>
-                <h3 className="text-sm font-semibold text-red-400 mb-2">⊖ 2. Sniper Short</h3>
+                <h3 className="text-sm font-semibold text-amber-400 mb-2">↩ Retrace Entry (Long/Short)</h3>
                 <pre className="rounded-md border border-zinc-700 bg-zinc-800 p-4 text-xs font-mono text-zinc-300 overflow-x-auto">{`{
   "api_key": "YOUR_API_KEY",
-  "version": "v17.25",
-  "type": "sniper_short",
-  "setup_id": "dynamic",
-  "symbol": "{{ticker}}",
-  "entry_price": {{plot_3}},
-  "stop_loss": {{plot_4}},
-  "take_profit": {{plot_5}},
-  "quality": {{plot_6}},
-  "poi": {{plot_7}},
-  "confluence": {{plot_8}},
-  "dt_stage": {{plot_9}},
-  "h4_bias": "{{plot_10}}",
-  "p_d_zone": "{{plot_11}}",
-  "kill_zone": "{{plot_12}}",
-  "guardian": "{{plot_13}}",
-  "timestamp": "{{timenow}}"
-}`}</pre>
-              </div>
-
-              <div>
-                <h3 className="text-sm font-semibold text-amber-400 mb-2">↩ 3. Retrace Long</h3>
-                <pre className="rounded-md border border-zinc-700 bg-zinc-800 p-4 text-xs font-mono text-zinc-300 overflow-x-auto">{`{
-  "api_key": "YOUR_API_KEY",
-  "version": "v17.25",
+  "version": "v17.21",
   "type": "retrace_long",
-  "setup_id": "dynamic",
   "symbol": "{{ticker}}",
   "suggested_entry": {{plot_0}},
   "target_sl": {{plot_1}},
   "target_tp": {{plot_2}},
-  "poi": {{plot_7}},
-  "confluence": {{plot_8}},
-  "guardian": "{{plot_13}}",
-  "zone": "{{plot_11}}",
-  "kill_zone": "{{plot_12}}",
-  "timestamp": "{{timenow}}"
-}`}</pre>
-              </div>
-
-              <div>
-                <h3 className="text-sm font-semibold text-amber-400 mb-2">↪ 4. Retrace Short</h3>
-                <pre className="rounded-md border border-zinc-700 bg-zinc-800 p-4 text-xs font-mono text-zinc-300 overflow-x-auto">{`{
-  "api_key": "YOUR_API_KEY",
-  "version": "v17.25",
-  "type": "retrace_short",
-  "setup_id": "dynamic",
-  "symbol": "{{ticker}}",
-  "suggested_entry": {{plot_3}},
-  "target_sl": {{plot_4}},
-  "target_tp": {{plot_5}},
-  "poi": {{plot_7}},
-  "confluence": {{plot_8}},
-  "guardian": "{{plot_13}}",
-  "zone": "{{plot_11}}",
+  "h4_bias": "{{plot_3}}",
+  "p_d_zone": "{{plot_4}}",
+  "guardian": "{{plot_5}}",
+  "poi": "{{plot_6}}",
+  "quality": "{{plot_7}}",
+  "confluence": "{{plot_8}}",
+  "setup_id": "{{plot_10}}",
   "kill_zone": "{{plot_12}}",
   "timestamp": "{{timenow}}"
 }`}</pre>
@@ -233,7 +182,7 @@ export default async function SettingsPage() {
               <div><span className="text-blue-400">GET</span> /api/v1/signals</div>
               <div><span className="text-blue-400">GET</span> /api/v1/metrics</div>
               <div><span className="text-blue-400">GET</span> /api/v1/pnl</div>
-              <div className="text-zinc-500 font-sans font-semibold text-xs mt-2 mb-1">OIE v17.25</div>
+              <div className="text-zinc-500 font-sans font-semibold text-xs mt-2 mb-1">OIE v17.21</div>
               <div><span className="text-blue-400">GET</span> /api/v1/opportunities</div>
               <div><span className="text-blue-400">GET</span> /api/v1/opportunities/summary</div>
               <div><span className="text-blue-400">GET</span> /api/v1/opportunities/:id</div>

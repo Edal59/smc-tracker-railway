@@ -1,0 +1,293 @@
+"""
+SMC Performance Tracker — Web Dashboard Routes
+Browser-based dashboard for viewing signals and performance.
+"""
+import os
+import logging
+from flask import Blueprint, render_template, request, jsonify
+
+from src.config import config
+from src.database import (
+    get_signals, get_active_signals, count_signals,
+    get_performance_summary, get_signal, get_events,
+    get_signals_with_trade_status, count_signals_with_trade_status,
+    mark_trade, get_trade_analytics, get_pip_size
+)
+from src.analytics.metrics import get_full_metrics, get_cumulative_pnl
+from src.oie_database import (
+    get_opportunities, count_opportunities, get_opportunity,
+    get_oie_summary
+)
+
+logger = logging.getLogger(__name__)
+
+dashboard_bp = Blueprint('dashboard', __name__)
+
+
+@dashboard_bp.route('/')
+def index():
+    """Main dashboard page."""
+    return render_template('dashboard.html', config=config)
+
+
+@dashboard_bp.route('/trades')
+def trades():
+    """Trade log page."""
+    return render_template('trades.html', config=config)
+
+
+@dashboard_bp.route('/opportunities')
+def opportunities():
+    """OIE Opportunities page."""
+    return render_template('opportunities.html', config=config)
+
+
+@dashboard_bp.route('/settings')
+def settings():
+    """Settings/info page."""
+    webhook_url = request.host_url.rstrip('/') + '/api/v1/signal'
+    return render_template('settings.html', config=config, webhook_url=webhook_url)
+
+
+# ============================================================
+# Dashboard API endpoints (for AJAX calls from templates)
+# ============================================================
+
+@dashboard_bp.route('/dash/api/summary')
+def dash_summary():
+    """Get dashboard summary data."""
+    pair = request.args.get('pair')
+    days = request.args.get('days', type=int)
+    summary = get_performance_summary(pair=pair, days=days)
+    active = get_active_signals()
+    total = count_signals()
+    return jsonify({
+        'summary': summary,
+        'active_count': len(active),
+        'total_signals': total,
+    })
+
+
+@dashboard_bp.route('/dash/api/signals')
+def dash_signals():
+    """Get signals for trade log."""
+    pair = request.args.get('pair')
+    status = request.args.get('status')
+    trade_status = request.args.get('trade_status')
+    limit = min(int(request.args.get('limit', 50)), 200)
+    offset = int(request.args.get('offset', 0))
+    signals = get_signals_with_trade_status(
+        pair=pair, status=status, trade_status=trade_status,
+        limit=limit, offset=offset
+    )
+    total = count_signals_with_trade_status(
+        pair=pair, status=status, trade_status=trade_status
+    )
+    return jsonify({'signals': signals, 'total': total, 'limit': limit, 'offset': offset})
+
+
+@dashboard_bp.route('/dash/api/metrics')
+def dash_metrics():
+    """Get full metrics."""
+    pair = request.args.get('pair')
+    days = request.args.get('days', type=int)
+    metrics = get_full_metrics(pair=pair, days=days)
+    return jsonify(metrics)
+
+
+@dashboard_bp.route('/dash/api/pnl')
+def dash_pnl():
+    """Get P&L curve data."""
+    pair = request.args.get('pair')
+    days = request.args.get('days', type=int)
+    data = get_cumulative_pnl(pair=pair, days=days)
+    return jsonify({'data': data})
+
+
+@dashboard_bp.route('/dash/api/signal/<signal_id>')
+def dash_signal_detail(signal_id):
+    """Get signal detail."""
+    signal = get_signal(signal_id)
+    if not signal:
+        return jsonify({'error': 'Not found'}), 404
+    events = get_events(signal_id)
+    signal['events'] = events
+    return jsonify(signal)
+
+
+@dashboard_bp.route('/dash/api/signal/<signal_id>/mark-trade', methods=['POST'])
+def dash_mark_trade(signal_id):
+    """Mark a signal as taken/missed/ignored with optional trade details."""
+    signal = get_signal(signal_id)
+    if not signal:
+        return jsonify({'error': 'Signal not found'}), 404
+    
+    data = request.get_json(silent=True)
+    if not data or 'trade_status' not in data:
+        return jsonify({'error': 'trade_status is required'}), 400
+    
+    trade_status = data['trade_status']
+    if trade_status not in ('taken', 'missed', 'ignored', 'pending'):
+        return jsonify({'error': 'Invalid trade_status. Must be: taken, missed, ignored, or pending'}), 400
+    
+    trade_data = {}
+    
+    if trade_status == 'taken':
+        # Extract trade details
+        trade_data['actual_entry_price'] = data.get('actual_entry_price')
+        trade_data['actual_exit_price'] = data.get('actual_exit_price')
+        trade_data['actual_entry_time'] = data.get('actual_entry_time')
+        trade_data['actual_exit_time'] = data.get('actual_exit_time')
+        trade_data['trade_notes'] = data.get('trade_notes')
+        
+        # Calculate actual P&L in pips if entry and exit prices provided
+        entry_p = trade_data.get('actual_entry_price') or signal.get('entry_price')
+        exit_p = trade_data.get('actual_exit_price')
+        if entry_p and exit_p:
+            pip_size = get_pip_size(signal['pair'])
+            direction = signal.get('direction', 'LONG')
+            if direction == 'LONG':
+                pnl_pips = (float(exit_p) - float(entry_p)) / pip_size
+            else:
+                pnl_pips = (float(entry_p) - float(exit_p)) / pip_size
+            trade_data['actual_pnl'] = round(pnl_pips, 1)
+        
+        # Allow explicit pnl override
+        if 'actual_pnl' in data and data['actual_pnl'] is not None:
+            trade_data['actual_pnl'] = data['actual_pnl']
+    elif trade_status in ('missed', 'ignored'):
+        trade_data['trade_notes'] = data.get('trade_notes')
+        # Clear trade-specific fields when marking as missed/ignored
+        trade_data['actual_entry_price'] = None
+        trade_data['actual_exit_price'] = None
+        trade_data['actual_entry_time'] = None
+        trade_data['actual_exit_time'] = None
+        trade_data['actual_pnl'] = None
+    elif trade_status == 'pending':
+        # Reset everything
+        trade_data['actual_entry_price'] = None
+        trade_data['actual_exit_price'] = None
+        trade_data['actual_entry_time'] = None
+        trade_data['actual_exit_time'] = None
+        trade_data['actual_pnl'] = None
+        trade_data['trade_notes'] = None
+    
+    # Remove None values for non-reset operations
+    trade_data = {k: v for k, v in trade_data.items() if v is not None or trade_status in ('pending', 'missed', 'ignored')}
+    
+    try:
+        updated_signal = mark_trade(signal_id, trade_status, trade_data)
+        logger.info(f"Marked signal {signal_id} as {trade_status}")
+        return jsonify({'status': 'ok', 'signal': updated_signal})
+    except Exception as e:
+        logger.error(f"Error marking trade: {e}", exc_info=True)
+        return jsonify({'error': str(e)}), 500
+
+
+@dashboard_bp.route('/dash/api/analytics')
+def dash_analytics():
+    """Get trade tracking analytics."""
+    pair = request.args.get('pair')
+    analytics = get_trade_analytics(pair=pair)
+    return jsonify(analytics)
+
+
+# ============================================================
+# OIE Dashboard API endpoints
+# ============================================================
+
+@dashboard_bp.route('/dash/api/oie/summary')
+def dash_oie_summary():
+    """Get OIE summary stats."""
+    pair = request.args.get('pair')
+    days = request.args.get('days', type=int)
+    try:
+        summary = get_oie_summary(pair=pair, days=days)
+        return jsonify(summary)
+    except Exception as e:
+        logger.error(f"OIE summary error: {e}", exc_info=True)
+        return jsonify({'total': 0, 'avg_rr': 0, 'sniper_count': 0,
+                        'retrace_count': 0, 'avg_poi': 0, 'active_count': 0})
+
+
+@dashboard_bp.route('/dash/api/oie/opportunities')
+def dash_oie_opportunities():
+    """Get OIE opportunities list."""
+    pair = request.args.get('pair')
+    status = request.args.get('status')
+    setup_type = request.args.get('setup_type')
+    kill_zone = request.args.get('kill_zone')
+    limit = min(int(request.args.get('limit', 50)), 200)
+    offset = int(request.args.get('offset', 0))
+    try:
+        opps = get_opportunities(pair=pair, status=status, setup_type=setup_type,
+                                 kill_zone=kill_zone, limit=limit, offset=offset)
+        total = count_opportunities(pair=pair, status=status)
+        return jsonify({'opportunities': opps, 'total': total, 'limit': limit, 'offset': offset})
+    except Exception as e:
+        logger.error(f"OIE opportunities error: {e}", exc_info=True)
+        return jsonify({'opportunities': [], 'total': 0, 'limit': limit, 'offset': offset})
+
+
+@dashboard_bp.route('/dash/api/oie/opportunity/<int:opp_id>')
+def dash_oie_opportunity_detail(opp_id):
+    """Get OIE opportunity detail."""
+    try:
+        opp = get_opportunity(opp_id)
+        if not opp:
+            return jsonify({'error': 'Not found'}), 404
+        return jsonify(opp)
+    except Exception as e:
+        logger.error(f"OIE opportunity detail error: {e}", exc_info=True)
+        return jsonify({'error': str(e)}), 500
+
+
+@dashboard_bp.route('/dash/api/reset-database', methods=['POST'])
+def dash_reset_database():
+    """Clear all signal data from the database. Requires API key confirmation."""
+    from src.database import get_connection
+    
+    data = request.get_json(silent=True) or {}
+    api_key = data.get('api_key', '')
+    
+    # Require API key for safety
+    if api_key != config.api_key:
+        return jsonify({'error': 'Invalid API key. Send {"api_key": "YOUR_KEY"} to confirm reset.'}), 401
+    
+    try:
+        report = {}
+        with get_connection() as conn:
+            # Count rows before clearing
+            tables = ['signals', 'signal_events', 'price_ticks', 'daily_metrics', 'system_log']
+            for table in tables:
+                try:
+                    count = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+                    report[table] = {'before': count}
+                except Exception:
+                    report[table] = {'before': 0, 'note': 'table may not exist'}
+            
+            # Clear all data tables (keep pair_config and schema)
+            conn.execute("DELETE FROM signal_events")
+            conn.execute("DELETE FROM price_ticks")
+            conn.execute("DELETE FROM daily_metrics")
+            conn.execute("DELETE FROM system_log")
+            conn.execute("DELETE FROM signals")
+            conn.commit()
+            
+            # Verify
+            for table in tables:
+                try:
+                    count = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+                    report[table]['after'] = count
+                except Exception:
+                    report[table]['after'] = 'unknown'
+        
+        logger.info("Database reset completed successfully")
+        return jsonify({
+            'status': 'ok',
+            'message': 'All signal data cleared successfully',
+            'report': report
+        })
+    except Exception as e:
+        logger.error(f"Database reset failed: {e}", exc_info=True)
+        return jsonify({'error': str(e)}), 500

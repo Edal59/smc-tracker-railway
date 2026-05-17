@@ -1,10 +1,10 @@
 """
 TradeX Tracker — Opportunity Intelligence Engine (OIE) Processor
-Version: v17.25
+Version: v17.21
 
 Normalizes incoming webhook payloads from TradingView alertconditions into
 clean opportunity records with human-readable decoded fields. Supports both
-v17.25 (current) and legacy v17.12.3 payload formats.
+v17.21 (current) and legacy v17.12.3 payload formats.
 
 Also bridges to the legacy signals pipeline so existing dashboard and
 analytics continue to work seamlessly.
@@ -62,8 +62,8 @@ def calculate_pips(price1: float, price2: float, symbol: str) -> float:
 def detect_version(payload: dict) -> str:
     """Detect the payload format version."""
     version = payload.get("version", "")
-    if version == "v17.25":
-        return "v17.25"
+    if version == "v17.21":
+        return "v17.21"
     if version == "v17.14":
         return "v17.14"
     if version == "v17.12.3":
@@ -131,8 +131,8 @@ def normalize_oie_payload(payload: dict) -> dict:
     with decoded categorical fields, ready for DB insertion.
 
     Handles:
-    - v17.25 Sniper alerts (entry_price, stop_loss, take_profit)
-    - v17.25 Retrace alerts (suggested_entry, target_sl, target_tp)
+    - v17.21 Sniper alerts (entry_price, stop_loss, take_profit)
+    - v17.21 Retrace alerts (suggested_entry, target_sl, target_tp)
     - v17.14 format (without kill_zone)
     - v17.12.3 legacy format (backward compat)
 
@@ -149,7 +149,7 @@ def normalize_oie_payload(payload: dict) -> dict:
     symbol = symbol.upper().strip()
 
     # --- Extract price levels ---
-    # Support both v17.25 field names and v17.14 shorthand with fallbacks
+    # Support both v17.21 field names and v17.14 shorthand with fallbacks
     if is_sniper_payload(payload):
         entry_price = _to_float(payload.get("entry_price") or payload.get("entry"))
         sl_price = _to_float(payload.get("stop_loss") or payload.get("sl"))
@@ -217,7 +217,7 @@ def normalize_oie_payload(payload: dict) -> dict:
 
 def oie_to_legacy_compact(payload: dict) -> dict:
     """
-    Convert an OIE v17.25 payload into the compact format that the existing
+    Convert an OIE v17.21 payload into the compact format that the existing
     processor.py understands, so it also gets recorded in the signals table
     for backward compatibility with dashboard/analytics.
 
@@ -261,7 +261,7 @@ def oie_to_legacy_compact(payload: dict) -> dict:
         "ps": _to_int(payload.get("poi", 0)),
         "rr": 3.0,
         "t": ts,
-        "v": payload.get("version", "v17.25").replace("v", ""),
+        "v": payload.get("version", "v17.21").replace("v", ""),
         "h4": "BU" if decode_h4_bias(payload.get("h4_bias", 0)) == "Bullish" else "BE",
         "z": {"Premium": "P", "Discount": "D", "Equilibrium": "E"}.get(
             decode_pd_zone(payload.get("p_d_zone") or payload.get("pd_zone") or payload.get("zone", 0)),
