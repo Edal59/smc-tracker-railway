@@ -1,21 +1,8 @@
 // This Pine Script™ is subject to the terms of the Mozilla Public License 2.0
 // © SMC Trading System
 //@version=6
-indicator("SMC Premium/Discount Confluence Engine v17.23", shorttitle="SMC PD v17", overlay=true, max_labels_count=500, max_lines_count=500, max_boxes_count=500)
+indicator("SMC Premium/Discount Confluence Engine v17.22", shorttitle="SMC PD v17", overlay=true, max_labels_count=500, max_lines_count=500, max_boxes_count=500)
 
-// ============================================================================
-// v17.23 CHANGELOG — EQ LINE: plot() → line.new() (NO logic/filter/alert changes)
-// ============================================================================
-// [2026-05-17] v17.23 — Visual-Only Update (NO logic/filter/alert changes)
-//
-// FIX: EQ LINE — Replaced plot() with line.new() for proper flat horizontal line
-//   - REMOVED plot()-based EQ implementation (eliminated price scale label)
-//   - Implemented delete-and-redraw line.new() pattern on every bar
-//   - Line spans from zone start (bar_index - 50) to current bar
-//   - color=yellow, width=3, style=solid — matches zone extent exactly
-//   - No title parameter — nothing appears on right price scale
-//   - Plot budget decreased from 34/64 to 33/64 (removed 1 plot)
-//
 // ============================================================================
 // v17.22 CHANGELOG — FINAL EQ LINE FIX + HUD TEXT UNIFORMITY
 // ============================================================================
@@ -336,7 +323,7 @@ indicator("SMC Premium/Discount Confluence Engine v17.23", shorttitle="SMC PD v1
 //   Added two subtle dashed lines at the Premium Bottom (66.7%) and 
 //   Discount Top (33.3%) boundaries for clearer zone demarcation.
 //
-// Plot budget: 33/64 (v17.23: EQ moved to line.new(), -1 plot)
+// Plot budget: 63/64 (+1 plot for equilibrium line)
 // ============================================================================
 // v17.11 CHANGELOG — FLEXIBLE P&D ZONE RANGE CONTROLS
 // ----------------------------------------------------------------------------
@@ -2107,34 +2094,21 @@ if barstate.islast
 // OB detection logic remains 100% active for POI scoring, signal gating, and alerts.
 
 // ============================================================================
-// EQ LINE — line.new() implementation, v17.23 FINAL FIX
+// EQ LINE — plot()-based implementation, GATED to active zone only (v17.22)
 // ============================================================================
-// Uses line.new() with delete-and-redraw for proper flat horizontal EQ line.
-// Spans from zone start (bar_index - 50) to current bar, matching P&D box extent.
-// No title/label — nothing appears on right price scale.
-// v17.23: Replaced plot() to eliminate price scale label and ensure flat line.
+// Uses native plot() for flicker-free, always-visible equilibrium line.
+// No z-order issues since plot() renders in the plot layer, not the drawing layer.
+// v17.22: Gated to only render within the active P&D zone region (last 50 bars),
+// matching the box left edge (bar_index - 50). Prevents historical squiggle.
 // ============================================================================
 
-// v17.23 FINAL EQ FIX — line.new() replaces plot()
-var line final_eq_line = na
+// EQ Line - 50% midpoint of P&D Zone
+eq_level = na(h4RangeHigh) or na(h4RangeLow) ? na : (h4RangeHigh + h4RangeLow) / 2
 
-// 1. Delete the old line every single bar to ensure NO ghosting or squiggles
-line.delete(final_eq_line)
+// v17.22: Only show EQ when within active zone region (last 50 bars matches P&D box extent)
+active_eq = (bar_index >= last_bar_index - 50) ? eq_level : na
 
-// 2. Only draw IF the zone is currently active and valid, and user has enabled it
-if showH4Zones and showEquilibriumLine and not na(h4RangeHigh) and not na(h4RangeLow)
-    float eq_val = (h4RangeHigh + h4RangeLow) / 2
-
-    // 3. Create a NEW line that spans from the start of the zone to the current bar
-    final_eq_line := line.new(
-         x1 = bar_index - 50,
-         y1 = eq_val,
-         x2 = bar_index,
-         y2 = eq_val,
-         color = color.yellow,
-         width = 3,
-         style = line.style_solid
-         )
+plot(showH4Zones and showEquilibriumLine ? active_eq : na, title="EQ", color=color.yellow, linewidth=3, style=plot.style_line)
 
 // ============================================================================
 // SECTION 20: PLOTS (v17.5 — 59/64, CONFLUENCE SCORE REPLACES SIGNAL COUNTER)
@@ -2184,9 +2158,10 @@ plot(structureStateCode, "Alert Structure State", display=display.none)         
 // - Re-Entry prices: Visualized separately via plotshape
 // - AMD Phase, IPM Long/Short, CT Lite flags: Secondary alerts
 
-// v17.23 FIX: EQ line now uses line.new() with delete-and-redraw (yellow, width 3)
-// This replaces the plot() approach which showed "SMC PD v17:EQ" on the price scale.
-// line.new() gives a proper flat horizontal line spanning the zone extent.
+// v17.22 FIX: EQ line now uses plot() with style=plot.style_line (yellow, width 3)
+// This replaces the previous line.new/label.new delete-and-redraw approach which had
+// z-order issues (drawn behind zone boxes) and flickering on chart reload.
+// The plot() approach is native to Pine Script and always renders correctly.
 
 // v17.1 FIX 5: Consolidated signal markers — one plotshape per direction
 anySigLong  = sniperLong or tier2LongFire or buildLongFire or liteLongFire or ctLiteLongFire
@@ -2237,8 +2212,8 @@ bgcolor(kzActive and enableKZ ? color.new(color.gray, 96) : na) // plot 53
 // Conflict background
 bgcolor(alignmentConflict ? color.new(color.red, 97) : na) // plot 54
 
-// v17.23: Equilibrium now uses line.new() (yellow, width 3) — flat horizontal, no price scale label
-// Previous plot() approach removed to eliminate price scale label and ensure proper flat line
+// v17.22: Equilibrium now uses plot() (yellow, width 3) — always visible, no z-order issues
+// Previous line.new approach removed due to flickering and z-order bugs
 
 cooldownActiveLong  = not isCooledDown(lastSniperLongBar) or not isCooledDown(lastTier2LongBar)
 cooldownActiveShort = not isCooledDown(lastSniperShortBar) or not isCooledDown(lastTier2ShortBar)
@@ -2247,9 +2222,9 @@ cooldownActiveShort = not isCooledDown(lastSniperShortBar) or not isCooledDown(l
 plot(enableHierarchy ? 1 : 0, "Hierarchy Active", display=display.none) // plot 55
 plot(cooldownWindow, "Cooldown Window", display=display.none)           // plot 56
 
-// TOTAL after v17.23: 33/64 outputs ✓ SAFE MARGIN +31
-// 22 plot() + 5 plotshape() + 2 bgcolor() + 4 alertcondition() = 33 total components
-// v17.23: -1 plot (EQ line moved from plot() to line.new() — no plot budget cost)
+// TOTAL after v17.22: 34/64 outputs ✓ SAFE MARGIN +30
+// 23 plot() + 5 plotshape() + 2 bgcolor() + 4 alertcondition() = 34 total components
+// v17.22: +1 plot (EQ line via plot() replacing line.new/label.new approach)
 // v17.16 additions: +1 plotshape (heartbeat), +1 plot (session signal counter)
 // S&D zones use box.new (no plot budget cost).
 // v17.6 Action Step + Action Plan use table.cell only (no plot cost).
@@ -2470,16 +2445,16 @@ if enable_alert_debug
 //   plot_5: tpShort      plot_11: pdZone           plot_17: structureStateCode
 
 // 1. Sniper Long
-alertcondition(fire_sniper_long, title="Sniper Long", message='{"type":"sniper_long","setup_id":"dynamic","symbol":"{{ticker}}","entry_price":{{plot_0}},"stop_loss":{{plot_1}},"take_profit":{{plot_2}},"quality":{{plot_6}},"poi":{{plot_7}},"confluence":{{plot_8}},"dt_stage":{{plot_9}},"h4_bias":"{{plot_10}}","p_d_zone":"{{plot_11}}","kill_zone":"{{plot_12}}","guardian":"{{plot_13}}","timestamp":"{{timenow}}","version":"v17.23"}')
+alertcondition(fire_sniper_long, title="Sniper Long", message='{"type":"sniper_long","setup_id":"dynamic","symbol":"{{ticker}}","entry_price":{{plot_0}},"stop_loss":{{plot_1}},"take_profit":{{plot_2}},"quality":{{plot_6}},"poi":{{plot_7}},"confluence":{{plot_8}},"dt_stage":{{plot_9}},"h4_bias":"{{plot_10}}","p_d_zone":"{{plot_11}}","kill_zone":"{{plot_12}}","guardian":"{{plot_13}}","timestamp":"{{timenow}}","version":"v17.22"}')
 
 // 2. Sniper Short
-alertcondition(fire_sniper_short, title="Sniper Short", message='{"type":"sniper_short","setup_id":"dynamic","symbol":"{{ticker}}","entry_price":{{plot_3}},"stop_loss":{{plot_4}},"take_profit":{{plot_5}},"quality":{{plot_6}},"poi":{{plot_7}},"confluence":{{plot_8}},"dt_stage":{{plot_9}},"h4_bias":"{{plot_10}}","p_d_zone":"{{plot_11}}","kill_zone":"{{plot_12}}","guardian":"{{plot_13}}","timestamp":"{{timenow}}","version":"v17.23"}')
+alertcondition(fire_sniper_short, title="Sniper Short", message='{"type":"sniper_short","setup_id":"dynamic","symbol":"{{ticker}}","entry_price":{{plot_3}},"stop_loss":{{plot_4}},"take_profit":{{plot_5}},"quality":{{plot_6}},"poi":{{plot_7}},"confluence":{{plot_8}},"dt_stage":{{plot_9}},"h4_bias":"{{plot_10}}","p_d_zone":"{{plot_11}}","kill_zone":"{{plot_12}}","guardian":"{{plot_13}}","timestamp":"{{timenow}}","version":"v17.22"}')
 
 // 3. Retrace Long
-alertcondition(fire_retrace_long, title="Retrace Long", message='{"type":"retrace_long","setup_id":"dynamic","symbol":"{{ticker}}","suggested_entry":{{plot_0}},"target_sl":{{plot_1}},"target_tp":{{plot_2}},"poi":{{plot_7}},"confluence":{{plot_8}},"guardian":"{{plot_13}}","zone":"{{plot_11}}","kill_zone":"{{plot_12}}","timestamp":"{{timenow}}","version":"v17.23"}')
+alertcondition(fire_retrace_long, title="Retrace Long", message='{"type":"retrace_long","setup_id":"dynamic","symbol":"{{ticker}}","suggested_entry":{{plot_0}},"target_sl":{{plot_1}},"target_tp":{{plot_2}},"poi":{{plot_7}},"confluence":{{plot_8}},"guardian":"{{plot_13}}","zone":"{{plot_11}}","kill_zone":"{{plot_12}}","timestamp":"{{timenow}}","version":"v17.22"}')
 
 // 4. Retrace Short
-alertcondition(fire_retrace_short, title="Retrace Short", message='{"type":"retrace_short","setup_id":"dynamic","symbol":"{{ticker}}","suggested_entry":{{plot_3}},"target_sl":{{plot_4}},"target_tp":{{plot_5}},"poi":{{plot_7}},"confluence":{{plot_8}},"guardian":"{{plot_13}}","zone":"{{plot_11}}","kill_zone":"{{plot_12}}","timestamp":"{{timenow}}","version":"v17.23"}')
+alertcondition(fire_retrace_short, title="Retrace Short", message='{"type":"retrace_short","setup_id":"dynamic","symbol":"{{ticker}}","suggested_entry":{{plot_3}},"target_sl":{{plot_4}},"target_tp":{{plot_5}},"poi":{{plot_7}},"confluence":{{plot_8}},"guardian":"{{plot_13}}","zone":"{{plot_11}}","kill_zone":"{{plot_12}}","timestamp":"{{timenow}}","version":"v17.22"}')
 
 // ============================================================================
 // SECTION 22: HUD TABLE (v17.18 — VERTICAL 2-COLUMN LAYOUT + POSITION TOGGLE)
@@ -2550,7 +2525,7 @@ string lastAlertDisplay = last_alert_type != "" ? (last_alert_type + " | " + las
 color  lastAlertColor   = last_alert_type != "" ? _act : _dim  // v17.22: signal fired=lime, else uniform
 
 // ============================================================================
-// HUD TABLE — v17.23 NAVY BLUE COMPACT VERTICAL LAYOUT + FLOAT MODE
+// HUD TABLE — v17.22 NAVY BLUE COMPACT VERTICAL LAYOUT + FLOAT MODE
 // ============================================================================
 // Grid: 2 columns × 21 rows  (Col 0: Label | Col 1: Value)
 // Row 0:  Header "SMC P&D v17.20"
@@ -2587,7 +2562,7 @@ if showHUD and barstate.islast
 
     // ── Row 0: Header (bright white + yellow version — brighter navy bg) ──
     table.cell(hud, 0, 0, "SMC P&D",        text_color=color.white,  text_size=size.normal, bgcolor=_hdr, text_halign=text.align_right)
-    table.cell(hud, 1, 0, "v17.23",          text_color=color.yellow, text_size=size.normal, bgcolor=_hdr, text_halign=text.align_left)
+    table.cell(hud, 1, 0, "v17.22",          text_color=color.yellow, text_size=size.normal, bgcolor=_hdr, text_halign=text.align_left)
 
     // ── Row 1: Bias ──
     table.cell(hud, 0, 1, "Bias",            text_color=_lbl, text_size=size.small, bgcolor=_tr, text_halign=text.align_right)
