@@ -1,12 +1,12 @@
 // This Pine Script™ is subject to the terms of the Mozilla Public License 2.0
 // © SMC Trading System
 //@version=6
-indicator("SMC Premium/Discount Confluence Engine v17.22", shorttitle="SMC PD v17", overlay=true, max_labels_count=500, max_lines_count=500, max_boxes_count=500)
+indicator("SMC Premium/Discount Confluence Engine v17.21", shorttitle="SMC PD v17", overlay=true, max_labels_count=500, max_lines_count=500, max_boxes_count=500)
 
 // ============================================================================
-// v17.22 CHANGELOG — FINAL EQ LINE FIX + HUD TEXT UNIFORMITY
+// v17.21 CHANGELOG — FINAL EQ LINE FIX + HUD TEXT UNIFORMITY
 // ============================================================================
-// [2026-05-16] v17.22 — Visual-Only Update (NO logic/filter/alert changes)
+// [2026-05-16] v17.21 — Visual-Only Update (NO logic/filter/alert changes)
 //
 // FIX 1: HUD TEXT UNIFORMITY
 //   - ALL value cells now use the same bright silver color (color.silver, 0%)
@@ -800,7 +800,7 @@ pdZone = inPremiumZone ? 1 : inDiscountZone ? 0 : -1
 
 // Zone position string and color (purely based on price location in 4H range)
 string h4ZoneStr = inPremiumZone ? "PZ (red)" : inDiscountZone ? "DZ (green)" : "EQ (gray)"
-color  h4ZoneColor = color.new(color.silver, 0)  // v17.22: uniform HUD text (was zone-colored)
+color  h4ZoneColor = color.new(color.silver, 0)  // v17.21: uniform HUD text (was zone-colored)
 
 // Bias direction string (purely based on h4Close vs 4H zones)
 string h4DirStr = h4Bias == 1 ? "BULLISH" : h4Bias == -1 ? "BEARISH" : "NEUTRAL"
@@ -1791,39 +1791,39 @@ else
 bool inCorrectZoneForBias = (h4Bias == 1 and inDiscountZone) or (h4Bias == -1 and inPremiumZone)
 
 string actionStep = "STANDBY"
-color  actionStepColor = color.new(color.silver, 0)  // v17.22: uniform default
+color  actionStepColor = color.new(color.silver, 0)  // v17.21: uniform default
 
 // Priority 1: INVALIDATED — hard invalidation fired recently
 if longInvalidated or shortInvalidated
     actionStep     := "INVALIDATED"
-    actionStepColor := color.new(color.red, 0)  // v17.22: INVALIDATED stays red
+    actionStepColor := color.new(color.red, 0)  // v17.21: INVALIDATED stays red
 
 // Priority 2: ACTIVE — trade being managed by state machine
 else if smStateLong == 1 or smStateShort == 1
     actionStep     := "ACTIVE"
-    actionStepColor := color.new(color.silver, 0)  // v17.22: uniform
+    actionStepColor := color.new(color.silver, 0)  // v17.21: uniform
 
 // v17.10 FIX 2: All directional states require confirmed H4 Bias (not NEUTRAL)
 // Priority 3: READY — all confluences met and sniper complete
 else if confluenceScore >= 4 and dtStage >= 5 and not h4BiasNeutral
     actionStep     := "READY"
-    actionStepColor := color.new(color.silver, 0)  // v17.22: uniform
+    actionStepColor := color.new(color.silver, 0)  // v17.21: uniform
 
 // Priority 4: MONITORING — in correct P&D zone but sniper stage not ready
 else if inCorrectZoneForBias and dtStage < 4 and not h4BiasNeutral
     actionStep     := "MONITORING"
-    actionStepColor := color.new(color.silver, 0)  // v17.22: uniform
+    actionStepColor := color.new(color.silver, 0)  // v17.21: uniform
 
 // Priority 5: HUNTING — in KZ, aligned, but price in equilibrium (no zone hit)
 // v17.10: Cannot hunt without directional bias
 else if kzActive and not alignmentConflict and inEquilibriumZone and not h4BiasNeutral
     actionStep     := "HUNTING"
-    actionStepColor := color.new(color.silver, 0)  // v17.22: uniform
+    actionStepColor := color.new(color.silver, 0)  // v17.21: uniform
 
 // Priority 6: STANDBY — default (outside KZ, or bias conflict, neutral bias, or no conditions)
 else
     actionStep     := "STANDBY"
-    actionStepColor := color.new(color.silver, 0)  // v17.22: uniform
+    actionStepColor := color.new(color.silver, 0)  // v17.21: uniform
 
 // =========================================================================
 // v17.6 FEATURE 2: ACTION PLAN (contextual forward-looking guidance)
@@ -1996,7 +1996,8 @@ if showBOS and bosDn
 // Red = Premium zone (upper range), Green = Discount zone (lower range).
 var box   pdPremiumBox  = na
 var box   pdDiscountBox = na
-
+var line  pdEqLine      = na
+var label pdEqLabel     = na
 var line  pdPremThreshLine = na
 var line  pdDiscThreshLine = na
 
@@ -2094,21 +2095,45 @@ if barstate.islast
 // OB detection logic remains 100% active for POI scoring, signal gating, and alerts.
 
 // ============================================================================
-// EQ LINE — plot()-based implementation, GATED to active zone only (v17.22)
+// v17.21 FINAL FIX: EQ LINE DELETE-AND-REDRAW EVERY BAR — DRAWN LAST (TOPMOST LAYER)
 // ============================================================================
-// Uses native plot() for flicker-free, always-visible equilibrium line.
-// No z-order issues since plot() renders in the plot layer, not the drawing layer.
-// v17.22: Gated to only render within the active P&D zone region (last 50 bars),
-// matching the box left edge (bar_index - 50). Prevents historical squiggle.
+// The EQ line MUST be drawn AFTER ALL box.new() calls (P&D zones AND S&D zones)
+// to ensure it renders on TOP of every filled zone. Uses delete-and-redraw pattern
+// so the line is ALWAYS the last visual element in the rendering pipeline.
+// This is the #1 priority fix in v17.20 — the EQ line was previously invisible
+// because zone box fills painted over it.
 // ============================================================================
-
-// EQ Line - 50% midpoint of P&D Zone
-eq_level = na(h4RangeHigh) or na(h4RangeLow) ? na : (h4RangeHigh + h4RangeLow) / 2
-
-// v17.22: Only show EQ when within active zone region (last 50 bars matches P&D box extent)
-active_eq = (bar_index >= last_bar_index - 50) ? eq_level : na
-
-plot(showH4Zones and showEquilibriumLine ? active_eq : na, title="EQ", color=color.yellow, linewidth=3, style=plot.style_line)
+// v17.21 FINAL EQ FIX: Delete-and-redraw EVERY bar (not just barstate.islast)
+// This ensures the EQ line is ALWAYS the topmost visual element
+// Pattern: delete previous → create new → extend right
+if showH4Zones and showEquilibriumLine
+    // Step 1: Calculate EQ level as exact 50% midpoint
+    float eq_level = (h4RangeHigh + h4RangeLow) / 2.0
+    // Step 2: Delete previous EQ line every bar and redraw fresh
+    if not na(pdEqLine)
+        line.delete(pdEqLine)
+    pdEqLine := line.new(
+         x1 = bar_index - 1,
+         y1 = eq_level,
+         x2 = bar_index,
+         y2 = eq_level,
+         color = color.white,
+         width = 5,
+         style = line.style_solid,
+         extend = extend.right
+         )
+    // Step 3: Delete previous EQ label every bar and redraw fresh
+    if not na(pdEqLabel)
+        label.delete(pdEqLabel)
+    pdEqLabel := label.new(
+         x = bar_index,
+         y = eq_level,
+         text = "── EQ",
+         color = color.new(color.black, 0),
+         textcolor = color.white,
+         style = label.style_label_left,
+         size = size.normal
+         )
 
 // ============================================================================
 // SECTION 20: PLOTS (v17.5 — 59/64, CONFLUENCE SCORE REPLACES SIGNAL COUNTER)
@@ -2158,10 +2183,15 @@ plot(structureStateCode, "Alert Structure State", display=display.none)         
 // - Re-Entry prices: Visualized separately via plotshape
 // - AMD Phase, IPM Long/Short, CT Lite flags: Secondary alerts
 
-// v17.22 FIX: EQ line now uses plot() with style=plot.style_line (yellow, width 3)
-// This replaces the previous line.new/label.new delete-and-redraw approach which had
-// z-order issues (drawn behind zone boxes) and flickering on chart reload.
-// The plot() approach is native to Pine Script and always renders correctly.
+// v17.14 FIX: REMOVED equilibrium plot() — this drew yellow circles on EVERY bar across
+// the entire chart history, causing the equilibrium to visually extend far to the left
+// of the P&D zone boxes (which only span bar_index-50 to bar_index+500).
+// The line.new-based equilibrium (yellow dotted, drawn in the P&D zone section) is the
+// sole equilibrium visual now, and its x1 matches the zone boxes' x1 (bar_index - 50).
+// Removing this also frees 1 plot slot (helps with plot budget).
+// OLD: plot(showEquilibriumLine and showH4Zones ? h4Eq : na, "",
+//     color=color.new(color.yellow, 40), linewidth=2,
+//     style=plot.style_circles, display=display.pane)                                // plot 39
 
 // v17.1 FIX 5: Consolidated signal markers — one plotshape per direction
 anySigLong  = sniperLong or tier2LongFire or buildLongFire or liteLongFire or ctLiteLongFire
@@ -2212,8 +2242,8 @@ bgcolor(kzActive and enableKZ ? color.new(color.gray, 96) : na) // plot 53
 // Conflict background
 bgcolor(alignmentConflict ? color.new(color.red, 97) : na) // plot 54
 
-// v17.22: Equilibrium now uses plot() (yellow, width 3) — always visible, no z-order issues
-// Previous line.new approach removed due to flickering and z-order bugs
+// v17.5: Equilibrium plot REMOVED — now uses line.new only (no plot cost, no tooltip)
+// This eliminates the "SMC PD v17:H4 Equilibrium" label from the chart data window
 
 cooldownActiveLong  = not isCooledDown(lastSniperLongBar) or not isCooledDown(lastTier2LongBar)
 cooldownActiveShort = not isCooledDown(lastSniperShortBar) or not isCooledDown(lastTier2ShortBar)
@@ -2222,11 +2252,11 @@ cooldownActiveShort = not isCooledDown(lastSniperShortBar) or not isCooledDown(l
 plot(enableHierarchy ? 1 : 0, "Hierarchy Active", display=display.none) // plot 55
 plot(cooldownWindow, "Cooldown Window", display=display.none)           // plot 56
 
-// TOTAL after v17.22: 34/64 outputs ✓ SAFE MARGIN +30
-// 23 plot() + 5 plotshape() + 2 bgcolor() + 4 alertcondition() = 34 total components
-// v17.22: +1 plot (EQ line via plot() replacing line.new/label.new approach)
+// TOTAL after v17.16: 33/64 outputs ✓ SAFE MARGIN +31
+// 22 plot() + 5 plotshape() + 2 bgcolor() + 4 alertcondition() = 33 total components
 // v17.16 additions: +1 plotshape (heartbeat), +1 plot (session signal counter)
-// S&D zones use box.new (no plot budget cost).
+// (removed 1 plot: equilibrium circles plot that caused left-extension visual bug)
+// S&D zones use box.new (no plot budget cost). Equilibrium line uses line.new (no cost).
 // v17.6 Action Step + Action Plan use table.cell only (no plot cost).
 
 // ============================================================================
@@ -2445,16 +2475,16 @@ if enable_alert_debug
 //   plot_5: tpShort      plot_11: pdZone           plot_17: structureStateCode
 
 // 1. Sniper Long
-alertcondition(fire_sniper_long, title="Sniper Long", message='{"type":"sniper_long","setup_id":"dynamic","symbol":"{{ticker}}","entry_price":{{plot_0}},"stop_loss":{{plot_1}},"take_profit":{{plot_2}},"quality":{{plot_6}},"poi":{{plot_7}},"confluence":{{plot_8}},"dt_stage":{{plot_9}},"h4_bias":"{{plot_10}}","p_d_zone":"{{plot_11}}","kill_zone":"{{plot_12}}","guardian":"{{plot_13}}","timestamp":"{{timenow}}","version":"v17.22"}')
+alertcondition(fire_sniper_long, title="Sniper Long", message='{"type":"sniper_long","setup_id":"dynamic","symbol":"{{ticker}}","entry_price":{{plot_0}},"stop_loss":{{plot_1}},"take_profit":{{plot_2}},"quality":{{plot_6}},"poi":{{plot_7}},"confluence":{{plot_8}},"dt_stage":{{plot_9}},"h4_bias":"{{plot_10}}","p_d_zone":"{{plot_11}}","kill_zone":"{{plot_12}}","guardian":"{{plot_13}}","timestamp":"{{timenow}}","version":"v17.21"}')
 
 // 2. Sniper Short
-alertcondition(fire_sniper_short, title="Sniper Short", message='{"type":"sniper_short","setup_id":"dynamic","symbol":"{{ticker}}","entry_price":{{plot_3}},"stop_loss":{{plot_4}},"take_profit":{{plot_5}},"quality":{{plot_6}},"poi":{{plot_7}},"confluence":{{plot_8}},"dt_stage":{{plot_9}},"h4_bias":"{{plot_10}}","p_d_zone":"{{plot_11}}","kill_zone":"{{plot_12}}","guardian":"{{plot_13}}","timestamp":"{{timenow}}","version":"v17.22"}')
+alertcondition(fire_sniper_short, title="Sniper Short", message='{"type":"sniper_short","setup_id":"dynamic","symbol":"{{ticker}}","entry_price":{{plot_3}},"stop_loss":{{plot_4}},"take_profit":{{plot_5}},"quality":{{plot_6}},"poi":{{plot_7}},"confluence":{{plot_8}},"dt_stage":{{plot_9}},"h4_bias":"{{plot_10}}","p_d_zone":"{{plot_11}}","kill_zone":"{{plot_12}}","guardian":"{{plot_13}}","timestamp":"{{timenow}}","version":"v17.21"}')
 
 // 3. Retrace Long
-alertcondition(fire_retrace_long, title="Retrace Long", message='{"type":"retrace_long","setup_id":"dynamic","symbol":"{{ticker}}","suggested_entry":{{plot_0}},"target_sl":{{plot_1}},"target_tp":{{plot_2}},"poi":{{plot_7}},"confluence":{{plot_8}},"guardian":"{{plot_13}}","zone":"{{plot_11}}","kill_zone":"{{plot_12}}","timestamp":"{{timenow}}","version":"v17.22"}')
+alertcondition(fire_retrace_long, title="Retrace Long", message='{"type":"retrace_long","setup_id":"dynamic","symbol":"{{ticker}}","suggested_entry":{{plot_0}},"target_sl":{{plot_1}},"target_tp":{{plot_2}},"poi":{{plot_7}},"confluence":{{plot_8}},"guardian":"{{plot_13}}","zone":"{{plot_11}}","kill_zone":"{{plot_12}}","timestamp":"{{timenow}}","version":"v17.21"}')
 
 // 4. Retrace Short
-alertcondition(fire_retrace_short, title="Retrace Short", message='{"type":"retrace_short","setup_id":"dynamic","symbol":"{{ticker}}","suggested_entry":{{plot_3}},"target_sl":{{plot_4}},"target_tp":{{plot_5}},"poi":{{plot_7}},"confluence":{{plot_8}},"guardian":"{{plot_13}}","zone":"{{plot_11}}","kill_zone":"{{plot_12}}","timestamp":"{{timenow}}","version":"v17.22"}')
+alertcondition(fire_retrace_short, title="Retrace Short", message='{"type":"retrace_short","setup_id":"dynamic","symbol":"{{ticker}}","suggested_entry":{{plot_3}},"target_sl":{{plot_4}},"target_tp":{{plot_5}},"poi":{{plot_7}},"confluence":{{plot_8}},"guardian":"{{plot_13}}","zone":"{{plot_11}}","kill_zone":"{{plot_12}}","timestamp":"{{timenow}}","version":"v17.21"}')
 
 // ============================================================================
 // SECTION 22: HUD TABLE (v17.18 — VERTICAL 2-COLUMN LAYOUT + POSITION TOGGLE)
@@ -2471,15 +2501,15 @@ alertcondition(fire_retrace_short, title="Retrace Short", message='{"type":"retr
 // --- v17.20: HUD Colors — MOVED HERE FOR PROPER DECLARATION ORDER ---
 bool _hudActive = hudModeInput == "Fixed" or barstate.islast or (last_alert_time > 0 and (timenow - last_alert_time) < 300000)
 color _tr  = hudModeInput == "Fixed" ? color.new(#1a237e, 20) : (_hudActive ? color.new(#1a237e, 20) : color.new(#1a237e, 75))
-color _hdr = color.new(#0d47a1, 10)      // v17.22: Header row — brighter navy
-// v17.22: Text Priority Hierarchy (updated)
+color _hdr = color.new(#0d47a1, 10)      // v17.21: Header row — brighter navy
+// v17.21: Text Priority Hierarchy (updated)
 color _lbl = color.white                 // Labels: bright white
 color _act = color.new(color.lime, 0)    // Active values: bright green
 color _dim = color.new(color.silver, 0)  // Inactive: silver
 color _wrn = color.new(color.orange, 0)  // Warnings: orange
 color _inv = color.new(color.red, 0)     // Invalidated: red
 color _sep = color.new(color.gray, 50)   // Separator
-color _frm = color.new(color.white, 60)  // v17.22: visible white border
+color _frm = color.new(color.white, 60)  // v17.21: visible white border
 
 // v17.5: State machine status strings (retained for internal use)
 smLongStr  = smStateLong == 1 ? "ACTIVE" : "IDLE"
@@ -2488,33 +2518,33 @@ ctGateStr = isCounterTrendLong ? (ct5PassLong ? "CT:PASS" : "CT:BLOCKED") : isCo
 
 // Sniper Progress
 sniperProgressStr = bothIdle and not anyLongFired and not anyShortFired ? "IDLE" : "Stage " + str.tostring(dtDisplayStage) + "/5"
-sniperProgressColor = _dim  // v17.22: uniform HUD text
+sniperProgressColor = _dim  // v17.21: uniform HUD text
 
 // Guardian
 guardDisplayStr = guardianDisplayCode == 0 ? "WAITING" : guardianDisplayCode == 1 ? "SNIPER BUY" : guardianDisplayCode == 2 ? "SNIPER SELL" : guardianDisplayCode == 3 ? "RETRACE BUY" : guardianDisplayCode == 4 ? "RETRACE SELL" : guardianDisplayCode == 5 ? "TRAP BUY" : guardianDisplayCode == 6 ? "TRAP SELL" : "—"
-guardDisplayColor = guardianDisplayCode == 5 or guardianDisplayCode == 6 ? _wrn : _dim  // v17.22: TRAP=orange, else uniform
+guardDisplayColor = guardianDisplayCode == 5 or guardianDisplayCode == 6 ? _wrn : _dim  // v17.21: TRAP=orange, else uniform
 
 // Confluence
 confluenceStr = str.tostring(confluenceScore) + "/8"
-confluenceColor = _dim  // v17.22: uniform HUD text
+confluenceColor = _dim  // v17.21: uniform HUD text
 
 // Kill Zone
 kzStr = isLondon() ? "London" : isNYAM() ? "NY AM" : isNYPM() ? "NY PM" : isAsian() ? "Asian" : "Off-Session"
-kzDisplayColor = _dim  // v17.22: uniform HUD text
+kzDisplayColor = _dim  // v17.21: uniform HUD text
 
 // POI Score
 poiStr = str.tostring(poiScore) + "/5"
-poiColor = _dim  // v17.22: uniform HUD text
+poiColor = _dim  // v17.21: uniform HUD text
 
 // Momentum
 momentumStr = str.tostring(momentumScore) + "/3 " + momentumFlags
-momentumColor = _dim  // v17.22: uniform HUD text
+momentumColor = _dim  // v17.21: uniform HUD text
 
 // AMD Phase
-amdColor = _dim  // v17.22: uniform HUD text
+amdColor = _dim  // v17.21: uniform HUD text
 
 // Trade Context color
-tradeCtxColor = _dim  // v17.22: uniform HUD text
+tradeCtxColor = _dim  // v17.21: uniform HUD text
 
 // Action Step + Plan combined
 actionCombined = actionPlan != "" ? (actionStep + " → " + actionPlan) : actionStep
@@ -2522,10 +2552,10 @@ actionCombined = actionPlan != "" ? (actionStep + " → " + actionPlan) : action
 // Last Alert
 string lastAlertTimeStr = last_alert_time > 0 ? str.format_time(last_alert_time, "HH:mm", syminfo.timezone) : "—"
 string lastAlertDisplay = last_alert_type != "" ? (last_alert_type + " | " + lastAlertTimeStr + " | " + last_alert_setup_id) : "No alerts fired"
-color  lastAlertColor   = last_alert_type != "" ? _act : _dim  // v17.22: signal fired=lime, else uniform
+color  lastAlertColor   = last_alert_type != "" ? _act : _dim  // v17.21: signal fired=lime, else uniform
 
 // ============================================================================
-// HUD TABLE — v17.22 NAVY BLUE COMPACT VERTICAL LAYOUT + FLOAT MODE
+// HUD TABLE — v17.21 NAVY BLUE COMPACT VERTICAL LAYOUT + FLOAT MODE
 // ============================================================================
 // Grid: 2 columns × 21 rows  (Col 0: Label | Col 1: Value)
 // Row 0:  Header "SMC P&D v17.20"
@@ -2546,23 +2576,23 @@ hudPos = hudPositionInput == "Right" ? position.top_right : hudPositionInput == 
 
 // Signal Stage display string (maps sniper dtDisplayStage to readable text)
 string signalStageStr = dtDisplayStage == 0 ? "IDLE" : dtDisplayStage == 1 ? "SCAN" : dtDisplayStage == 2 ? "SETUP" : dtDisplayStage == 3 ? "CONFIRM" : dtDisplayStage == 4 ? "READY" : dtDisplayStage == 5 ? "FIRE" : "Stage " + str.tostring(dtDisplayStage)
-color  signalStageColor = dtDisplayStage >= 5 ? _act : _dim  // v17.22: FIRE=lime, else uniform
+color  signalStageColor = dtDisplayStage >= 5 ? _act : _dim  // v17.21: FIRE=lime, else uniform
 
 // Signals Today
 string sigTodayStr = str.tostring(sessionSignalCount) + " signals"
-color  sigTodayColor = sessionSignalCount > 0 ? _act : _dim  // v17.22: signals fired=lime, else uniform
+color  sigTodayColor = sessionSignalCount > 0 ? _act : _dim  // v17.21: signals fired=lime, else uniform
 
 // Session Levels
 string sessLvlStr = (nearDailyLevel ? "Daily✓" : "Daily✗") + " " + (nearAsianLevel ? "Asian✓" : "Asian✗")
-color  sessLvlClr = _dim  // v17.22: uniform HUD text
+color  sessLvlClr = _dim  // v17.21: uniform HUD text
 
 if showHUD and barstate.islast
-    // v17.22: Navy Blue table, visible white border, compact size
+    // v17.21: Navy Blue table, visible white border, compact size
     var table hud = table.new(hudPos, 2, 22, bgcolor=_tr, frame_color=_frm, frame_width=1, border_color=_tr, border_width=0)
 
     // ── Row 0: Header (bright white + yellow version — brighter navy bg) ──
     table.cell(hud, 0, 0, "SMC P&D",        text_color=color.white,  text_size=size.normal, bgcolor=_hdr, text_halign=text.align_right)
-    table.cell(hud, 1, 0, "v17.22",          text_color=color.yellow, text_size=size.normal, bgcolor=_hdr, text_halign=text.align_left)
+    table.cell(hud, 1, 0, "v17.21",          text_color=color.yellow, text_size=size.normal, bgcolor=_hdr, text_halign=text.align_left)
 
     // ── Row 1: Bias ──
     table.cell(hud, 0, 1, "Bias",            text_color=_lbl, text_size=size.small, bgcolor=_tr, text_halign=text.align_right)
