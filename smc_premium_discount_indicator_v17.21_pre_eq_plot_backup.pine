@@ -1996,7 +1996,8 @@ if showBOS and bosDn
 // Red = Premium zone (upper range), Green = Discount zone (lower range).
 var box   pdPremiumBox  = na
 var box   pdDiscountBox = na
-
+var line  pdEqLine      = na
+var label pdEqLabel     = na
 var line  pdPremThreshLine = na
 var line  pdDiscThreshLine = na
 
@@ -2094,16 +2095,45 @@ if barstate.islast
 // OB detection logic remains 100% active for POI scoring, signal gating, and alerts.
 
 // ============================================================================
-// EQ LINE — plot()-based implementation (replaces line.new/label.new)
+// v17.21 FINAL FIX: EQ LINE DELETE-AND-REDRAW EVERY BAR — DRAWN LAST (TOPMOST LAYER)
 // ============================================================================
-// Uses native plot() for flicker-free, always-visible equilibrium line.
-// No z-order issues since plot() renders in the plot layer, not the drawing layer.
+// The EQ line MUST be drawn AFTER ALL box.new() calls (P&D zones AND S&D zones)
+// to ensure it renders on TOP of every filled zone. Uses delete-and-redraw pattern
+// so the line is ALWAYS the last visual element in the rendering pipeline.
+// This is the #1 priority fix in v17.20 — the EQ line was previously invisible
+// because zone box fills painted over it.
 // ============================================================================
-
-// EQ Line - 50% midpoint of P&D Zone
-eq_level = na(h4RangeHigh) or na(h4RangeLow) ? na : (h4RangeHigh + h4RangeLow) / 2
-
-plot(showH4Zones and showEquilibriumLine ? eq_level : na, title="EQ", color=color.yellow, linewidth=3, style=plot.style_line)
+// v17.21 FINAL EQ FIX: Delete-and-redraw EVERY bar (not just barstate.islast)
+// This ensures the EQ line is ALWAYS the topmost visual element
+// Pattern: delete previous → create new → extend right
+if showH4Zones and showEquilibriumLine
+    // Step 1: Calculate EQ level as exact 50% midpoint
+    float eq_level = (h4RangeHigh + h4RangeLow) / 2.0
+    // Step 2: Delete previous EQ line every bar and redraw fresh
+    if not na(pdEqLine)
+        line.delete(pdEqLine)
+    pdEqLine := line.new(
+         x1 = bar_index - 1,
+         y1 = eq_level,
+         x2 = bar_index,
+         y2 = eq_level,
+         color = color.white,
+         width = 5,
+         style = line.style_solid,
+         extend = extend.right
+         )
+    // Step 3: Delete previous EQ label every bar and redraw fresh
+    if not na(pdEqLabel)
+        label.delete(pdEqLabel)
+    pdEqLabel := label.new(
+         x = bar_index,
+         y = eq_level,
+         text = "── EQ",
+         color = color.new(color.black, 0),
+         textcolor = color.white,
+         style = label.style_label_left,
+         size = size.normal
+         )
 
 // ============================================================================
 // SECTION 20: PLOTS (v17.5 — 59/64, CONFLUENCE SCORE REPLACES SIGNAL COUNTER)
@@ -2153,10 +2183,15 @@ plot(structureStateCode, "Alert Structure State", display=display.none)         
 // - Re-Entry prices: Visualized separately via plotshape
 // - AMD Phase, IPM Long/Short, CT Lite flags: Secondary alerts
 
-// v17.21 FIX: EQ line now uses plot() with style=plot.style_line (yellow, width 3)
-// This replaces the previous line.new/label.new delete-and-redraw approach which had
-// z-order issues (drawn behind zone boxes) and flickering on chart reload.
-// The plot() approach is native to Pine Script and always renders correctly.
+// v17.14 FIX: REMOVED equilibrium plot() — this drew yellow circles on EVERY bar across
+// the entire chart history, causing the equilibrium to visually extend far to the left
+// of the P&D zone boxes (which only span bar_index-50 to bar_index+500).
+// The line.new-based equilibrium (yellow dotted, drawn in the P&D zone section) is the
+// sole equilibrium visual now, and its x1 matches the zone boxes' x1 (bar_index - 50).
+// Removing this also frees 1 plot slot (helps with plot budget).
+// OLD: plot(showEquilibriumLine and showH4Zones ? h4Eq : na, "",
+//     color=color.new(color.yellow, 40), linewidth=2,
+//     style=plot.style_circles, display=display.pane)                                // plot 39
 
 // v17.1 FIX 5: Consolidated signal markers — one plotshape per direction
 anySigLong  = sniperLong or tier2LongFire or buildLongFire or liteLongFire or ctLiteLongFire
@@ -2207,8 +2242,8 @@ bgcolor(kzActive and enableKZ ? color.new(color.gray, 96) : na) // plot 53
 // Conflict background
 bgcolor(alignmentConflict ? color.new(color.red, 97) : na) // plot 54
 
-// v17.21: Equilibrium now uses plot() (yellow, width 3) — always visible, no z-order issues
-// Previous line.new approach removed due to flickering and z-order bugs
+// v17.5: Equilibrium plot REMOVED — now uses line.new only (no plot cost, no tooltip)
+// This eliminates the "SMC PD v17:H4 Equilibrium" label from the chart data window
 
 cooldownActiveLong  = not isCooledDown(lastSniperLongBar) or not isCooledDown(lastTier2LongBar)
 cooldownActiveShort = not isCooledDown(lastSniperShortBar) or not isCooledDown(lastTier2ShortBar)
@@ -2217,11 +2252,11 @@ cooldownActiveShort = not isCooledDown(lastSniperShortBar) or not isCooledDown(l
 plot(enableHierarchy ? 1 : 0, "Hierarchy Active", display=display.none) // plot 55
 plot(cooldownWindow, "Cooldown Window", display=display.none)           // plot 56
 
-// TOTAL after v17.21: 34/64 outputs ✓ SAFE MARGIN +30
-// 23 plot() + 5 plotshape() + 2 bgcolor() + 4 alertcondition() = 34 total components
-// v17.21: +1 plot (EQ line via plot() replacing line.new/label.new approach)
+// TOTAL after v17.16: 33/64 outputs ✓ SAFE MARGIN +31
+// 22 plot() + 5 plotshape() + 2 bgcolor() + 4 alertcondition() = 33 total components
 // v17.16 additions: +1 plotshape (heartbeat), +1 plot (session signal counter)
-// S&D zones use box.new (no plot budget cost).
+// (removed 1 plot: equilibrium circles plot that caused left-extension visual bug)
+// S&D zones use box.new (no plot budget cost). Equilibrium line uses line.new (no cost).
 // v17.6 Action Step + Action Plan use table.cell only (no plot cost).
 
 // ============================================================================
