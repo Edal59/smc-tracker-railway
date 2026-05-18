@@ -1,0 +1,2601 @@
+// This Pine Script™ is subject to the terms of the Mozilla Public License 2.0
+// © SMC Trading System
+//@version=6
+indicator("SMC Premium/Discount Confluence Engine v17.19", shorttitle="SMC PD v17", overlay=true, max_labels_count=500, max_lines_count=500, max_boxes_count=500)
+
+// ============================================================================
+// v17.19 CHANGELOG — CRITICAL EQ LINE FIX + HUD VISIBILITY IMPROVEMENTS
+// ============================================================================
+// [2026-05-16] v17.19 — Visual-Only Update (NO logic/filter/alert changes)
+//
+// FIX 1 (CRITICAL): P&D Equilibrium Line
+//   - Fixed EQ label accumulation: now tracked via var label + label.delete()
+//   - EQ label padded ("  EQ  ") with dark background (transp 20) for visibility
+//   - Line remains: width=4, color.white, solid, extend.right
+//
+// FIX 2: HUD High-Contrast Background
+//   - Background: 60% opacity (color.new(color.black, 40)) — was 30% (70 transp)
+//   - Added 1px frame border: color.new(color.white, 80) for terminal-style panel
+//
+// FIX 3: HUD Float Mode
+//   - New input: HUD Mode = "Fixed" (default) or "Hover"
+//   - Fixed: always 60% opacity
+//   - Hover inactive: 15% opacity (transp 85), active on recent signal/last bar: 60%
+//
+// FIX 4: HUD Size Optimization
+//   - Content rows: size.small (was size.normal) — ~15% width reduction
+//   - Labels shortened: "Alignment"→"Align", "Kill Zone"→"KZ", "Confluence"→"Confl",
+//     "AMD Phase"→"AMD", "Trade Ctx"→"Trade", "Entry Mode"→"Entry",
+//     "Signal Stage"→"Stage", "Last Alert"→"Alert", "Signals Today"→"Signals"
+//   - Header row remains size.normal for prominence
+//
+// FIX 5: Text Priority Hierarchy
+//   - Headers: color.white (bright white)
+//   - Active values: color.lime (bright green)
+//   - Neutral: color.new(color.gray, 30) (light grey)
+//   - Warnings: color.orange
+//   - Invalidated: color.red
+//
+// Plot budget: 33/64 (unchanged — no new plots)
+// ============================================================================
+
+// ============================================================================
+// v17.18 CHANGELOG — HIGH-VISIBILITY UI UPDATE
+// ============================================================================
+// [2026-05-16] v17.18 — HIGH-VISIBILITY Visual Update (NO logic/filter/alert changes)
+//
+// FIX 1: HUD High-Impact Overhaul
+//   - Font size: size.small → size.normal (15% larger globally)
+//   - Labels: Bright white (#FFFFFF) — was dim 40% transparent
+//   - Background: 30% opacity (color.new(color.black, 70)) — was 15% (85 transp)
+//   - Inactive rows: Lighter grey (#A0A0A0 equiv, transp 40) — was 30
+//   - All value text rendered at size.normal for maximum readability
+//
+// FIX 2: Commanding Equilibrium Line
+//   - Width: 4 (was 3)
+//   - Color: color.white (0% transparency) — was color.new(color.white, 20)
+//   - EQ label: size.normal with opaque black background patch
+//   - EQ label style: label.style_label_left (was label.style_none)
+//
+// FIX 3: P&D Zone Color Brightening
+//   - Premium fill: color.new(color.red, 85) — was 92
+//   - Premium border: color.new(color.red, 70) — was 80
+//   - Discount fill: color.new(color.green, 85) — was 92
+//   - Discount border: color.new(color.green, 70) — was 80
+//
+// Plot budget: 33/64 (unchanged — ZERO new plots)
+// ZERO logic/filter/alert architecture changes
+// ============================================================================
+
+// ============================================================================
+// v17.16 CHANGELOG — SESSION LEVELS, PROOF-OF-LIFE, UI REFINEMENTS
+// ============================================================================
+// [2026-05-16] v17.16 — Confluence Engine Expansion & Signal Audit Layer
+//
+// PRIORITY 1 — VISUAL SESSION LEVELS:
+//   1. Daily High/Low lines (line.new, extend.right) with labels
+//   2. Asian Session High/Low lines (Tokyo 00:00-09:00 UTC) with labels
+//   3. Confluence scoring expanded from 6 to 8 components:
+//      (7) Daily H/L proximity — score 0-100 based on distance to Daily H or L
+//      (8) Asian H/L proximity — score 0-100 based on distance to Asian H or L
+//   4. Guardian context updated to consider session level proximity
+//
+// PRIORITY 2 — SIGNAL PROOF-OF-LIFE:
+//   1. Toggleable "Show Proof-of-Life" overlay (default = true)
+//   2. Session signal counter — tracks signals fired per session
+//   3. Heartbeat indicator — small green dot when system is active/scanning
+//   4. Counter displayed in HUD as additional row
+//
+// PRIORITY 3 — UI REFINEMENTS:
+//   1. HUD background: 100% transparent → 85% opacity glass tint
+//   2. Debug rows hidden by default (new "Show Debug Rows" toggle, default=false)
+//   3. Zone Debug rows gated behind new toggle
+//
+// Plot budget: 33/64 (+2 from v17.15: heartbeat plotshape + signal counter plot)
+// ============================================================================
+
+// ============================================================================
+// v17.15 CHANGELOG — PRO-GLASS HUD OVERHAUL
+// ============================================================================
+// [2026-05-15] v17.15 — Pro-Glass UI: 3-Pillar Columnar HUD
+//
+// VISUAL OVERHAUL:
+//   1. HUD moved to TOP RIGHT with 100% transparent background (no box)
+//   2. Mono-spaced font (size.small) for clean alignment
+//   3. 3 horizontal pillars to minimize vertical space:
+//      Pillar A (Context):   Bias, Alignment, Kill Zone
+//      Pillar B (Signal):    Sniper Progress, POI Score, Momentum, Guardian
+//      Pillar C (Execution): AMD Phase, Trade Context, Entry Mode, Action Step
+//   4. Removed "SMC Equilibrium" label — replaced with thin dashed line only
+//   5. No greyed-out rows — inactive data shows dim grey text, transparent bg
+//   6. Removed State Machine, Hierarchy, Displacement rows (consolidated)
+//   7. Action Plan appended to Action Step row (saves space)
+//   8. Last Alert row retained as footer
+//   9. Zone Debug rows retained (toggled, below footer)
+//
+// Plot budget: 31/64 (unchanged — HUD uses table.cell only, no plot cost)
+// ============================================================================
+
+// ============================================================================
+// v17.14.1 CHANGELOG — KILL ZONE PAYLOAD INTEGRATION
+// ============================================================================
+// [2026-05-13] v17.14.1 — Add Kill Zone to webhook alert payloads
+//   - Added "kill_zone": {{plot_12}} to all 4 alertcondition() JSON payloads
+//   - kzCode was already exposed as plot_12 since v17.12.3; now included in alerts
+//   - Kill Zone mapping: 0=Off-Session, 1=London, 2=NY AM, 3=NY PM, 4=Asian
+//   - Enables session-based analytics in TradeX tracker
+//   - Updated version strings from "v17.14" to "v17.14.1"
+//   - No logic, plot budget, or visual changes
+//
+// [2026-05-13] v17.14 — Fix chart spam, harden dedup, restore production thresholds
+//
+// BUG 1 — CHART LABEL SPAM (P0):
+//   Debug labels (label.new) fired on EVERY historical bar that met conditions.
+//   With thresholds at 0, this created hundreds of overlapping labels.
+//   FIX: Debug labels now gated by barstate.islastconfirmedhistory (last bar only).
+//   Additionally, labels use var+delete pattern — max 1 label per alert type.
+//
+// BUG 2 — WEAK DEDUP ON HISTORY:
+//   setup_id changes every bar (confluence/stage shift), so dedup was ineffective.
+//   FIX: Dedup now uses DIRECTION+ZONE only (e.g. "BULL_DZ") — stable across bars.
+//   Cooldown is purely bar-count based, no longer bypassed by setup_id change.
+//
+// BUG 3 — RE10045 EMPTY ARRAY (from v17.13):
+//   for loop on empty debug arrays crashed. FIX: if dbg_rows > 0 guard.
+//
+// BUG 4 — CE10123 SERIES STRING IN ALERTCONDITION (from v17.13):
+//   FIX: Static "dynamic" placeholder in message (Pine requires const string).
+//
+// RESTORED: Production thresholds (confluence=4, stage=5, retrace=2, cooldown=60).
+//   Debug mode defaults to OFF. Enable manually for testing.
+//
+// Plot budget: 32/64 (unchanged from v17.13)
+// ============================================================================
+
+// ============================================================================
+// v17.13 CHANGELOG — ALERT CONSOLIDATION & HARDENING SYSTEM
+// ============================================================================
+// [2026-05-13] v17.13 — Production Alert System Overhaul (P0 SAFETY-CRITICAL)
+//
+// CONSOLIDATION: Reduced from 15 alertcondition() to exactly 4:
+//   1. Sniper Long    2. Sniper Short    3. Retrace Long    4. Retrace Short
+//
+// FIRING RULES:
+//   Sniper: Action Step==READY, Confluence>=threshold, dtStage>=threshold,
+//           Guardian not TRAP, State Machine not BLOCKED, deduplicated
+//   Retrace: Correct P&D zone, Guardian allows retrace, Confluence>=threshold
+//
+// DEDUPLICATION: setup_id (e.g. "BULL_DZ_CF4_S5") prevents duplicate fires
+// COOLDOWN: Configurable minutes between same-type alerts (default 60)
+// DEBUG MODE: Optional labels + table showing last N alerts on chart
+// HUD: New "Last Alert" row after Action Plan
+// WEBHOOK PAYLOADS: Exact JSON spec with correct {{plot_X}} references
+//
+// Plot budget: 32/64 (reduced from 47 — removed 15 alertconditions, added 4)
+// ============================================================================
+
+// ============================================================================
+// v17.12.3 CHANGELOG — ALERTCONDITION PAYLOAD FIX
+// ============================================================================
+// [2026-05-12] v17.12.3 — Corrected All alertcondition() {{plot_X}} References
+//
+// ROOT CAUSE: When v17.12 consolidated plots from 38→18, the {{plot_X}}
+// references inside alertcondition JSON payloads were not fully updated to
+// match the new plot order. This caused webhook payloads to send scrambled
+// data (e.g., stop_loss referencing quality_score's plot).
+//
+// FIX: Updated all 12 alertcondition() payloads to use correct plot mapping:
+//   plot_0: entryLong      plot_6:  qualityScore    plot_12: kzCode
+//   plot_1: slLong         plot_7:  poiScore        plot_13: guardianCode
+//   plot_2: tpLong         plot_8:  confluenceScore  plot_14: displacement
+//   plot_3: entryShort     plot_9:  dtStage          plot_15: momentumScore
+//   plot_4: slShort        plot_10: h4Bias           plot_16: h4FibLevel
+//   plot_5: tpShort        plot_11: pdZone           plot_17: structureStateCode
+//
+// RESULT: All webhook JSON payloads now contain correct field→plot mappings.
+//         Plot count unchanged at 28/64.
+//
+// ============================================================================
+// v17.12.2 CHANGELOG — EQUILIBRIUM LABEL FIX
+// ============================================================================
+// [2026-05-12] v17.12.2 — Remove "H4 Equilibrium" Label from Chart
+//
+// FIX: The plot-based equilibrium line (yellow circles) was still showing
+// "SMC PD v17:H4 Equilibrium" label on the chart price axis due to
+// trackprice=true. In Pine Script, even with title="", trackprice shows
+// the indicator name prefix as a label.
+//
+// CHANGE: Replaced trackprice=true with display=display.pane
+//   - display.pane: Renders the plot on the chart pane ONLY (no data window, no legend)
+//   - trackprice removed: Eliminates the price-axis label entirely
+//   - The line.new-based equilibrium line (yellow dotted) remains the primary visual
+//   - The plot circles provide additional visual reinforcement on the pane
+//
+// RESULT: No more "H4 Equilibrium" text floating on the chart.
+//         Plot count unchanged (still within safe limits).
+//
+// ============================================================================
+// v17.12 CHANGELOG — CRITICAL PLOT BUDGET FIX (65 → 28 PLOTS)
+// ============================================================================
+// [2026-05-12] v17.12 — Consolidated Alert Data Plots to Fix RE10140 Error
+//
+// ROOT CAUSE: v17.11.1 exceeded TradingView's 64-plot limit (reported as 65 plots).
+// The issue was from 38 hidden "Alert" plots (display=display.none) used only 
+// for webhook {{plot_X}} references in alertconditions.
+//
+// FIX: Consolidated alert plots from 38 down to 18 (20-plot reduction).
+// REMOVED (non-critical data):
+//   - FVG Filter, OB Refinement: Inferred from poiScore
+//   - Asian High/Low/Pips: Not needed for real-time signals
+//   - AMD Phase, IPM flags, CT Lite flags: Secondary alerts (not critical path)
+//   - Tier3 Confluence/PoolMask: Redundant with poiScore
+//   - Entry/TP Mode Flags: Static configuration data
+//   - Momentum Flags: Derived from momentumScore
+//   - MSS POI Top/Bot: Internal intermediate state
+//   - Re-Entry prices: Visualized separately (not needed in webhook)
+//
+// KEPT (essential data):
+//   - Entry/SL/TP prices: Critical for trade execution
+//   - Quality metrics: Confluence, POI, DT Stage
+//   - H4 Structure: Bias, P&D Zone, Kill Zone, Guardian Code
+//   - Technical indicators: Displacement, Momentum, Fib Level, Structure State
+//
+// RESULT: Plot count reduced to 28/64 (safe margin of 36 plots).
+// All core trading signal functionality fully preserved.
+// Webhook payloads updated to reference new plot numbers.
+//
+// ============================================================================
+// v17.11.1 CHANGELOG — EQUILIBRIUM LINE & ZONE PROPORTION VERIFICATION
+// ============================================================================
+// [2026-05-12] v17.11.1 — Equilibrium Line Enhancement & Zone Diagnostics
+//
+// FIX 1 — VISIBLE EQUILIBRIUM LINE:
+//   The equilibrium line (50% midpoint) has been significantly enhanced:
+//   - Increased width from 1 to 2 for better visibility
+//   - Changed color from gray(40% transparent) to solid yellow(20% transparent)
+//   - Added a plot-based backup line (circles style) for trackprice support
+//   - New toggle "Show Equilibrium Line" in Visual Settings
+//
+// FIX 2 — ZONE PROPORTION DIAGNOSTICS:
+//   New HUD row "Zone Ratio" shows real-time PZ/EQ/DZ percentage split.
+//   Displays: "PZ:33.0% EQ:34.0% DZ:33.0% (Target: 33/34/33)"
+//   Helps verify zones are correctly proportioned at a glance.
+//
+// FIX 3 — PREMIUM/DISCOUNT THRESHOLD LINES:
+//   Added two subtle dashed lines at the Premium Bottom (66.7%) and 
+//   Discount Top (33.3%) boundaries for clearer zone demarcation.
+//
+// Plot budget: 63/64 (+1 plot for equilibrium line)
+// ============================================================================
+// v17.11 CHANGELOG — FLEXIBLE P&D ZONE RANGE CONTROLS
+// ----------------------------------------------------------------------------
+// [2026-05-12] v17.11 — Flexible Zone Range Configuration for Intraday Trading
+//
+// PROBLEM: Previous versions used a fixed 50-bar H4 lookback, creating zones
+//   that were too large for intraday trading (often 300-400+ pips). Discount
+//   zones frequently fell off-screen, making them useless for day trading.
+//
+// FIX 1 — ZONE SOURCE TOGGLE:
+//   New input "Zone Source" with 3 options:
+//   - SESSION: Today's high/low only (scalping)
+//   - RECENT: Last N H4 bars — user-configurable (day trading, DEFAULT)
+//   - MACRO: Full historical swing (50 bars, swing trading)
+//
+// FIX 2 — ZONE LOOKBACK CONTROL:
+//   "Zone Lookback (H4 Bars)" input: 5-100, default 20
+//   20 bars × 4H = ~3.3 trading days — ideal for day trading
+//   Replaces the hardcoded 50-bar lookback when in RECENT mode
+//
+// FIX 3 — MAX ZONE HEIGHT CAP:
+//   "Max Zone Height (× ATR)" input: 5.0-50.0, default 15.0
+//   If the calculated zone exceeds this cap, it compresses to a smaller
+//   recent lookback (10 H4 bars) to keep zones actionable.
+//   Can be disabled via "Enable Zone Height Cap" toggle.
+//
+// FIX 4 — MINIMUM ZONE HEIGHT FLOOR:
+//   Zones cannot collapse below 2 × H4 ATR, ensuring meaningful PZ/DZ/EQ.
+//
+// FIX 5 — ZONE CONFIG HUD DIAGNOSTICS:
+//   Enhanced Zone Debug rows show: Source, Lookback, Zone Height, Max Height,
+//   and whether the height cap was applied (✓ OK or ⚠ CAPPED).
+//
+// PRESETS:
+//   Scalping:     SESSION, LB=10, MaxH=10×ATR
+//   Day Trading:  RECENT,  LB=20, MaxH=15×ATR (DEFAULT)
+//   Swing:        MACRO,   LB=50, MaxH=25×ATR (or disabled)
+//
+// Plot budget: 62/64 (unchanged — no new plots or alertconditions)
+// request.security calls: 10/40 (added 2 for H4 ATR and compressed range)
+// ============================================================================
+// v17.10 CHANGELOG — GUARDIAN & ACTION STEP NEUTRAL BIAS LOGIC
+// ----------------------------------------------------------------------------
+// [2026-05-12] v17.10 — Minor refinements for Guardian & Action Step consistency
+//
+// FIX 1 — GUARDIAN NEUTRAL GATE:
+//   When H4 Bias = NEUTRAL (h4Bias == 0), Guardian can no longer suggest
+//   directional bias. Instead of showing RETRACE BUY/SELL or TRAP BUY/SELL,
+//   Guardian now displays "⏸ WAITING" in gray.
+//   - Guardian only shows directional status when H4 Bias is confirmed
+//     (BULLISH or BEARISH)
+//   - Eliminates contradictory signals: NEUTRAL bias + directional Guardian
+//
+// FIX 2 — ACTION STEP NEUTRAL GATE:
+//   When H4 Bias = NEUTRAL, Action Step can no longer show HUNTING,
+//   MONITORING, or READY — these all require directional context.
+//   New behavior:
+//   - STANDBY (gray) when NEUTRAL and no active trade/invalidation
+//   - Action Plan: "Neutral bias — wait for H4 directional confirmation"
+//   - INVALIDATED and ACTIVE states unaffected (always shown if applicable)
+//
+// FIX 3 — CROSS-TIMEFRAME ACTION STEP CONSISTENCY:
+//   Since H4 Bias, zone detection, and invalidation all already use
+//   request.security("240",...) from v17.7, Action Step is inherently
+//   timeframe-consistent. This version adds explicit h4Bias==0 gates
+//   to HUNTING, MONITORING, and READY states to ensure they cannot
+//   activate without confirmed directional bias on ANY timeframe.
+//
+// VALIDATION:
+//   - H4 Bias NEUTRAL → Guardian shows "⏸ WAITING" (not RETRACE/TRAP)
+//   - H4 Bias NEUTRAL → Action Step shows "STANDBY" (not HUNTING)
+//   - H4 Bias BULLISH/BEARISH → Normal Guardian and Action Step behavior
+//   - 5M, 15M, 1H, 4H all show identical Action Step for same conditions
+//
+// Plot budget: 62/64 (unchanged — logic changes only, no new plots)
+// ============================================================================
+// v17.9 CHANGELOG — ZONE DETECTION FIX + DIAGNOSTIC VISIBILITY
+// ----------------------------------------------------------------------------
+// CRITICAL FIX: PZ/DZ/EQ zone detection was using a 10% neutral zone width,
+//   creating an extremely narrow EQ band (only ±5% of range around midpoint).
+//   This caused prices clearly in the middle third to show as PZ or DZ.
+//
+// ROOT CAUSE: neutralZoneWidth defaulted to 10.0 (= ±5% of range for EQ).
+//   With a 5-point range (e.g. 211-216), EQ was only 213.25-213.75 (0.5 pts).
+//   Price at 213.277 SHOULD be in EQ with classic thirds but was shown as DZ/PZ
+//   whenever the 4H range recalculated and shifted boundaries slightly.
+//
+// FIX 1: Changed neutralZoneWidth default from 10.0 to 33.3 (classic thirds).
+//   - Premium Zone (PZ): top 1/3 of range (above 66.7% mark)
+//   - Discount Zone (DZ): bottom 1/3 of range (below 33.3% mark)
+//   - Equilibrium (EQ): middle 1/3 of range (33.3% to 66.7%)
+//   - Max value raised from 25.0 to 50.0 for flexibility
+//
+// FIX 2: Added Zone Debug diagnostic row to HUD showing:
+//   - RH (Range High), RL (Range Low), PT (Premium Threshold), DT (Discount Threshold)
+//   - Current close and boolean zone states (P/E/D)
+//   This allows real-time validation of zone calculations on any pair.
+//
+// FIX 3: Added 3 debug alertconditions for zone transitions (Premium/EQ/DZ entry).
+//
+// INCLUDES all v17.7 fixes (H4 range via request.security) and v17.8 fixes
+// (zone position independent of bias direction).
+//
+// VALIDATION: Price at 213.277 with range 211-216 must show "EQ (gray)".
+//   Premium threshold = 214.35, Discount threshold = 212.65.
+// ============================================================================
+// v17.6 CHANGELOG — TACTICAL GUIDANCE & VISUAL LAYERING
+// ----------------------------------------------------------------------------
+// [2026-05-12] v17.6 — Action Step, Action Plan & P&D Layering Fix
+//
+// FEATURE 1 — ACTION STEP (replaces "Readiness" row):
+//   6-state lifecycle guidance for the trader:
+//     STANDBY  (Gray)   — Outside Kill Zone OR Bias/Alignment conflict
+//     HUNTING  (Blue)   — In KZ, Aligned, but price in Equilibrium (no P&D zone)
+//     MONITORING (Amber) — Price in correct P&D zone but Sniper Stage < 4
+//     READY    (Green)  — Confluence ≥ 4 AND Sniper Stage = 5/5
+//     ACTIVE   (Purple) — State Machine active (trade being managed)
+//     INVALIDATED (Red) — Setup killed by hard invalidation
+//
+// FEATURE 2 — ACTION PLAN (new HUD row):
+//   Contextual forward-looking instruction based on current state:
+//   - "Standby for next Kill Zone session"
+//   - "Wait for Dip to Discount for Long"
+//   - "Wait for Retrace to Premium for Short"
+//   - "Watch for Sniper Trigger"
+//   - "Manage trade per Entry Mode rules"
+//   - "Stand down — setup killed"
+//
+// FEATURE 3 — P&D ZONE VISUAL LAYERING FIX:
+//   - P&D zones now use wide right offset (+500 bars) for full visibility
+//   - Increased transparency to 92% (from 88%) for cleaner candle visibility
+//   - P&D box creation remains BEFORE S&D zones for proper draw order
+//   - Equilibrium line uses extend=extend.right for infinite projection
+//   - Candle bodies and wicks clearly visible on top of zone shading
+//
+// HUD: 18 rows (was 16). "Readiness" replaced by "Action Step" + "Action Plan"
+// Plot budget: 59/64 (unchanged — new logic uses no plots)
+//
+// ============================================================================
+
+// ============================================================================
+// v17.5 CHANGELOG — UNIFIED STATE-AWARE DECISION ENGINE
+// ----------------------------------------------------------------------------
+// [2026-05-12] v17.5 ARCHITECTURAL REWRITE — Synchronized HUD & Gating
+//
+// Carries forward all v17.0–v17.5 fixes.
+//
+// FIX 1 — REPLACE signalCounter WITH REAL-TIME CONFLUENCE SCORE:
+//   - Removed cumulative signalCounter (misleading historical artifact)
+//   - New confluenceScore computed fresh on EVERY bar from 6 real-time components:
+//     (1) Sniper Progress (dtStage) >= 4   (+1)
+//     (2) POI Score >= 3                    (+1)
+//     (3) Displacement active (>= 0.5 ATR) (+1)
+//     (4) Momentum clean (score < 2)        (+1)
+//     (5) Kill Zone active                  (+1)
+//     (6) Alignment valid (no conflict)     (+1)
+//   - Hard gate: capped at 3 unless POI >= 3 AND Displacement >= 0.5× ATR
+//   - Forced to 0 when both State Machine sides = IDLE
+//   - HUD renamed "Signal" → "Confluence"
+//
+// FIX 2 — SNIPER PROGRESS (dtStage) RESET LOGIC:
+//   - dtStage now resets to 0 on:
+//     (a) H4 bias change (h4BiasChanged)
+//     (b) Any invalidation event (longKilledThisBar / shortKilledThisBar)
+//     (c) Session/day boundary (newDay)
+//     (d) Inactivity decay: auto-reset if no progression in 30 bars
+//   - Prevents permanent "Stage 5/5" display
+//   - HUD renamed "Sniper State" → "Sniper Progress"
+//
+// FIX 3 — GUARDIAN ↔ CONFLUENCE SYNCHRONIZATION:
+//   - If Guardian = TRAP (code 5/6), confluenceScore capped at max 2
+//   - Guardian SNIPER mode display requires confluenceScore >= 5
+//   - Eliminates contradiction: TRAP + high readiness impossible
+//
+// FIX 4 — KILL ZONE VISUAL SUPPRESSION:
+//   - When Outside KZ: confluenceScore capped at max 3
+//   - When Outside KZ: Sniper Progress display downgraded by 1 stage
+//   - Internal detection logic remains 100% active (no execution logic change)
+//
+// FIX 5 — STATE MACHINE → HUD INTEGRATION:
+//   - When L:IDLE AND S:IDLE: confluenceScore forced = 0
+//   - When L:IDLE AND S:IDLE: Sniper Progress shows "IDLE" (not stage number)
+//   - When IDLE: Guardian blocked from showing SNIPER mode
+//   - New unified readiness layer: READY / BLOCKED / ACTIVE / INVALID
+//
+// FIX 6 — INVALIDATION LABEL DEDUPLICATION:
+//   - Per-bar tracking: lastInvalBarLong / lastInvalBarShort
+//   - Only ONE invalidation "X" label per bar per direction
+//   - Prevents stacking 3-4 "X" labels on same candle
+//
+// FIX 7 — HUD NAMING CORRECTIONS:
+//   - "Signal" → "Confluence" (real-time score, not counter)
+//   - "Sniper State" → "Sniper Progress" (reflects staged readiness)
+//   - New "Readiness" row: READY / BLOCKED / ACTIVE / INVALID
+//
+// Plot budget: 59/64 (unchanged from v17.5)
+//
+// [2026-05-12] v17.5 FINAL — All Hatching Removed, Solid P&D Zones
+//   ROOT CAUSE OF HATCHING: box.new() called every bar/tick without deleting old boxes
+//   → dozens of overlapping boxes created the hatched/striped visual artifact.
+//
+//   FIX A — P&D EXTENDING ZONES (now SOLID fills, zero hatching):
+//     * Changed from naked box.new() to var box + delete-then-recreate pattern
+//     * Only ONE premium box and ONE discount box exist at any time
+//     * Solid red fill (88% transparent) for Premium, solid green for Discount
+//
+//   FIX B — REMOVED FVG MICRO-ZONE CANDLE OVERLAYS:
+//     * These drew a new box on EVERY bar where FVG was active → overlapping = hatching
+//     * FVG detection logic remains 100% active for POI scoring and signals
+//
+//   FIX C — REMOVED OB MICRO-ZONE CANDLE OVERLAYS:
+//     * Same issue as FVG: new box per bar while price in OB → overlapping = hatching
+//     * OB detection logic remains 100% active for POI scoring and signals
+//
+//   PRESERVED: Supply/Demand zones (solid fills, purple borders, large white labels)
+//   Plot budget unchanged: 59/64 (box.new has zero plot cost)
+// ============================================================================
+
+// ============================================================================
+// SECTION 1: INPUT SETTINGS
+// ============================================================================
+
+// --- Core Engine Settings ---
+grpEngine = "⚙️ Core Engine"
+entryModeInput    = input.string("MSS-Retrace", "Entry Mode", options=["BOS", "MSS-Retrace"], group=grpEngine)
+tpModeInput       = input.string("Fixed R:R", "Take Profit Mode", options=["Fixed R:R", "Next Opposing Zone", "Hybrid"], group=grpEngine)
+defaultRR         = input.float(3.0, "Default R:R Target", minval=1.0, maxval=10.0, step=0.5, group=grpEngine)
+mssRetraceBars    = input.int(15, "MSS-Retrace Timeout (bars)", minval=5, maxval=50, group=grpEngine)
+
+// --- Signal Tier Settings ---
+grpTiers = "📊 Signal Tiers"
+enableTier1       = input.bool(true, "Enable Tier 1 Alerts", group=grpTiers)
+enableTier2       = input.bool(true, "Enable Tier 2 Alerts", group=grpTiers)
+enableBuilding    = input.bool(false, "Enable Building Alerts", group=grpTiers)
+enableLite        = input.bool(true, "Enable Lite Alerts", group=grpTiers)
+enableCTLite      = input.bool(true, "Enable CT Lite Alerts", group=grpTiers)
+alertCooldownBars = input.int(5, "Alert Cooldown (bars)", minval=1, maxval=20, group=grpTiers, tooltip="v17.1: Minimum bars between signals of the same type in the same direction. Prevents signal spam.")
+minPOIforAlerts   = input.int(3, "Min POI Score for Alerts", minval=1, maxval=5, group=grpTiers)
+criticalPOIThreshold = input.int(2, "Critical POI Invalidation Threshold", minval=1, maxval=5, group=grpTiers, tooltip="v17.1: If POI score falls below this level, active setups are invalidated.")
+
+// --- v17.1 NEW: Signal Hierarchy Settings ---
+grpHierarchy = "🏗️ Signal Hierarchy (v17.1)"
+enableHierarchy   = input.bool(true, "Enable Signal Priority System", group=grpHierarchy, tooltip="Sniper suppresses Trap & CT Lite; Trap suppresses CT Lite")
+enableZoneMerge   = input.bool(true, "Enable Zone-Based Merging", group=grpHierarchy, tooltip="Only one signal per POI zone (OB/FVG area)")
+cooldownWindow    = input.int(5, "Cooldown Window (bars)", minval=1, maxval=30, group=grpHierarchy, tooltip="Bars after a signal fires before same-type can fire again")
+
+// --- H4 Bias Settings ---
+grpH4 = "📈 H4 Multi-TF Bias"
+showH4Zones       = input.bool(true, "Show H4 P&D Zones", group=grpH4)
+showInvalidation  = input.bool(true, "Show Invalidation in H4 Bias", group=grpH4)
+neutralZoneWidth  = input.float(33.3, "Neutral Zone Width (%)", minval=1.0, maxval=50.0, group=grpH4, tooltip="Controls the EQ (equilibrium) zone width as % of total range.\n33.3 = classic thirds (PZ top 1/3, EQ middle 1/3, DZ bottom 1/3).\n10 = narrow EQ band (original).")
+
+// --- Zone Range Configuration (v17.11) ---
+grpZoneRange = "📐 Zone Range Settings"
+zoneSourceInput   = input.string("RECENT", "Zone Source", options=["SESSION", "RECENT", "MACRO"], group=grpZoneRange, tooltip="SESSION = Current session high/low only (scalping)\nRECENT = Last N H4 bars — adjustable (day trading, DEFAULT)\nMACRO = Full 50-bar H4 swing (swing trading)")
+zoneLookbackBars  = input.int(20, "Zone Lookback (H4 Bars)", minval=5, maxval=100, step=5, group=grpZoneRange, tooltip="Number of 4H bars for RECENT mode range calculation.\n20 bars ≈ 3 trading days (ideal for day trading)\n10 bars ≈ 1.5 days (scalping)\n50 bars ≈ 8 days (swing)")
+maxZoneHeightATR  = input.float(15.0, "Max Zone Height (× ATR)", minval=5.0, maxval=50.0, step=5.0, group=grpZoneRange, tooltip="Maximum zone height in H4 ATR multiples.\nIf exceeded, compresses to most recent 10 H4 bars.\n15 = day trading (default), 10 = scalping, 25 = swing")
+enableZoneHeightCap = input.bool(true, "Enable Zone Height Cap", group=grpZoneRange, tooltip="When enabled, prevents zones from becoming too large for screen visibility.\nDisable for swing trading with wide ranges.")
+
+// --- Guardian System ---
+grpGuardian = "🛡️ Guardian System"
+enableGuardian    = input.bool(true, "Enable Conflict Guardian", group=grpGuardian)
+guardianNeutralPct= input.float(10.0, "Neutral Zone Width (%)", minval=1.0, maxval=30.0, group=grpGuardian)
+
+// --- Structure Settings ---
+grpStructure = "🔄 Structure Detection"
+swingLen          = input.int(5, "Swing Detection Length", minval=2, maxval=20, group=grpStructure)
+m15SwingLen       = input.int(8, "M15 Swing Length", minval=3, maxval=20, group=grpStructure)
+showChoch         = input.bool(true, "Show CHoCH Lines", group=grpStructure)
+showBOS           = input.bool(true, "Show BOS Lines", group=grpStructure)
+
+// --- FVG & OB Settings ---
+grpFVG = "📦 FVG & Order Blocks"
+showFVG           = input.bool(true, "Show Fair Value Gaps", group=grpFVG)
+showOB            = input.bool(true, "Show Order Blocks", group=grpFVG)
+obRefinementDepth = input.int(3, "OB Refinement Depth", minval=1, maxval=5, group=grpFVG)
+fvgMinSize        = input.float(0.5, "FVG Min Size (ATR %)", minval=0.1, maxval=2.0, group=grpFVG)
+
+// --- Kill Zone Settings ---
+grpKZ = "⏰ Kill Zones"
+enableKZ          = input.bool(true, "Enable Kill Zone Filter", group=grpKZ)
+londonStart       = input.int(2, "London Open (EST)", minval=0, maxval=23, group=grpKZ)
+londonEnd         = input.int(5, "London Close (EST)", minval=0, maxval=23, group=grpKZ)
+nyAMStart         = input.int(7, "NY AM Open (EST)", minval=0, maxval=23, group=grpKZ)
+nyAMEnd           = input.int(11, "NY AM Close (EST)", minval=0, maxval=23, group=grpKZ)
+nyPMStart         = input.int(13, "NY PM Open (EST)", minval=0, maxval=23, group=grpKZ)
+nyPMEnd           = input.int(16, "NY PM Close (EST)", minval=0, maxval=23, group=grpKZ)
+asianStart        = input.int(19, "Asian Open (EST)", minval=0, maxval=23, group=grpKZ)
+asianEnd          = input.int(23, "Asian Close (EST)", minval=0, maxval=23, group=grpKZ)
+
+// --- IPM Settings ---
+grpIPM = "🎯 Institutional Precision Model"
+enableIPM         = input.bool(true, "Enable IPM Detection", group=grpIPM)
+ipmMinorSwingLen  = input.int(3, "Minor Swing Detection Length", minval=2, maxval=10, group=grpIPM)
+ipmSweepMaxBars   = input.int(5, "IPM Sweep Max Bars", minval=2, maxval=15, group=grpIPM)
+
+// --- AMD Phase Settings ---
+grpAMD = "🔄 AMD Phase Detection"
+enableAMD         = input.bool(true, "Enable AMD Phase Tracking", group=grpAMD)
+amdLookback       = input.int(20, "AMD Lookback (bars)", minval=5, maxval=50, group=grpAMD)
+
+// --- Visual Settings ---
+grpVisual = "🎨 Visual Settings"
+showHUD           = input.bool(true, "Show HUD Table", group=grpVisual)
+showTradeContext  = input.bool(true, "Show Trade Context Row in HUD", group=grpVisual)
+showDebugRows     = input.bool(false, "Show Debug Rows", group=grpVisual, tooltip="v17.16: Master toggle for all debug/diagnostic rows in HUD. Default OFF for clean display.")
+showZoneDebug     = input.bool(true, "Show Zone Debug Row in HUD", group=grpVisual, tooltip="Displays raw H4 range values, thresholds, and boolean zone states for diagnostic validation.")
+showEquilibriumLine = input.bool(true, "Show Equilibrium Line", group=grpVisual, tooltip="Display a visible 50% midpoint line across the chart.\nHelps identify the exact center of the H4 range at a glance.")
+hudPositionInput  = input.string("Left", "HUD Position", options=["Left", "Right", "Center"], group=grpVisual, tooltip="v17.19: Choose where the HUD table appears on the chart.")
+hudModeInput      = input.string("Fixed", "HUD Mode", options=["Fixed", "Hover"], group=grpVisual, tooltip="v17.19: Fixed = always visible. Hover = fades when inactive, brightens on recent signal or last bar.")
+showFibWarnings   = input.bool(true, "Show Fib Level Warnings", group=grpVisual)
+showPOILabels     = input.bool(true, "Show POI Score Labels", group=grpVisual)
+labelSize         = input.string("small", "Label Size", options=["tiny", "small", "normal"], group=grpVisual)
+showSecondaryInfo = input.bool(false, "Show Secondary Info Labels", group=grpVisual, tooltip="v17.1: When disabled, hides Fib warnings and POI labels when a signal is active nearby. Reduces clutter.")
+
+// --- v17.16: Session Level Lines ---
+grpSessionLevels = "📏 Session Levels (v17.16)"
+showDailyHL       = input.bool(true, "Show Daily High/Low Lines", group=grpSessionLevels, tooltip="Draw horizontal lines at the current day's high and low with labels.")
+showAsianHL       = input.bool(true, "Show Asian Session High/Low Lines", group=grpSessionLevels, tooltip="Draw horizontal lines at the Asian session (Tokyo 00:00-09:00 UTC) high and low.")
+dailyLineColor    = input.color(color.new(color.blue, 30), "Daily H/L Color", group=grpSessionLevels)
+asianLineColor    = input.color(color.new(color.orange, 30), "Asian H/L Color", group=grpSessionLevels)
+
+// --- v17.16: Signal Proof-of-Life ---
+grpProofOfLife = "💓 Proof-of-Life (v17.16)"
+showProofOfLife   = input.bool(true, "Show Proof-of-Life", group=grpProofOfLife, tooltip="Display a heartbeat indicator and session signal counter on the chart.")
+
+
+// --- Momentum Settings ---
+grpMomentum = "📊 Momentum"
+momentumBonus     = input.int(10, "Momentum Bonus Threshold", minval=5, maxval=30, group=grpMomentum)
+
+// =========================================================================
+// v17.13: ALERT SYSTEM CONFIGURATION
+// =========================================================================
+grpAlertSystem = "═══ ALERT SYSTEM CONFIGURATION ═══"
+confluence_threshold_sniper   = input.int(4, "Sniper Confluence Threshold", minval=0, maxval=8, group=grpAlertSystem, tooltip="Minimum confluence score required for Sniper alerts to fire.")
+sniper_stage_threshold        = input.int(5, "Sniper Stage Threshold", minval=0, maxval=8, group=grpAlertSystem, tooltip="Minimum dtStage (Sniper Progress) required for Sniper alerts.")
+retrace_confluence_threshold  = input.int(2, "Retrace Confluence Threshold", minval=0, maxval=8, group=grpAlertSystem, tooltip="Minimum confluence score required for Retrace alerts to fire.")
+alert_cooldown_minutes        = input.int(60, "Alert Cooldown (Minutes)", minval=1, group=grpAlertSystem, tooltip="Minimum minutes between same-type alerts. Purely bar-count based cooldown.")
+enable_alert_debug            = input.bool(false, "Enable Alert Debug Mode", group=grpAlertSystem, tooltip="When enabled, shows alert history table and a single reused label for the most recent alert. Labels only appear on the last bar — no historical clutter.")
+alert_debug_table_rows        = input.int(5, "Debug Table Rows", minval=1, maxval=10, group=grpAlertSystem, tooltip="Number of recent alerts to show in the debug table.")
+alert_webhook_test_endpoint   = input.string("", "Test Webhook Endpoint (Documentation)", group=grpAlertSystem, tooltip="For documentation only — paste your test webhook URL here for reference.")
+
+// ============================================================================
+// SECTION 2: HELPER FUNCTIONS
+// ============================================================================
+
+// --- HUD helper functions (CE10295 refactor) ---
+hudR(row, col, val, bgc, txtc) =>
+    [row, col, val, bgc, txtc]
+
+hudH(val, bgc) =>
+    [val, bgc]
+
+hudW(condition, trueVal, falseVal) =>
+    condition ? trueVal : falseVal
+
+// --- ATR calculation ---
+atrLen = 14
+atrValue = ta.atr(atrLen)
+
+// --- Pip size detection ---
+pipSize = syminfo.mintick * (str.contains(syminfo.ticker, "JPY") ? 100 : (syminfo.type == "crypto" ? 1 : 10))
+
+// --- Time helpers ---
+estHour = hour(time, "America/New_York")
+
+isLondon()  => estHour >= londonStart and estHour < londonEnd
+isNYAM()    => estHour >= nyAMStart   and estHour < nyAMEnd
+isNYPM()    => estHour >= nyPMStart   and estHour < nyPMEnd
+isAsian()   => estHour >= asianStart  and estHour < asianEnd
+
+inKillZone() => isLondon() or isNYAM() or isNYPM() or isAsian()
+
+killZoneCode() =>
+    isLondon() ? 1 : isNYAM() ? 2 : isNYPM() ? 3 : isAsian() ? 4 : 0
+
+// --- Day change detection (used for resets across sections) ---
+newDay = ta.change(time("D"))
+
+// --- Label size helper ---
+getLabelSize() =>
+    labelSize == "tiny" ? size.tiny : labelSize == "small" ? size.small : size.normal
+
+// ============================================================================
+// SECTION 3: H4 MULTI-TIMEFRAME BIAS
+// ============================================================================
+
+// =============================================================================
+// H4 BIAS — TRUE 4H DATA (v17.7 FIX) + ZONE POSITION FIX (v17.8)
+// All range, bias, and P/D zone logic computed INSIDE request.security("240")
+// so results are IDENTICAL regardless of chart timeframe (5m, 15m, 1h, 4h).
+// v17.8: Zone position (PZ/DZ/EQ) now independent of bias direction.
+// =============================================================================
+
+// Step 1: Compute H4 range HIGH and LOW based on Zone Source selection (v17.11)
+// Determine effective lookback based on Zone Source mode
+int effectiveLookback = zoneSourceInput == "SESSION" ? 6 : zoneSourceInput == "RECENT" ? zoneLookbackBars : 50
+
+// Primary range: calculated with effective lookback on true 4H bars
+float h4RangeHighRaw = request.security(syminfo.tickerid, "240", ta.highest(high, effectiveLookback), lookahead=barmerge.lookahead_off)
+float h4RangeLowRaw  = request.security(syminfo.tickerid, "240", ta.lowest(low, effectiveLookback), lookahead=barmerge.lookahead_off)
+
+// H4 ATR for zone height cap validation (14-period ATR on 4H bars)
+float h4ATR = request.security(syminfo.tickerid, "240", ta.atr(14), lookahead=barmerge.lookahead_off)
+
+// Compressed range: used when height cap is exceeded (10 H4 bars = ~1.5 days)
+int compressedLookback = math.min(effectiveLookback, 10)
+float h4CompressedHigh = request.security(syminfo.tickerid, "240", ta.highest(high, compressedLookback), lookahead=barmerge.lookahead_off)
+float h4CompressedLow  = request.security(syminfo.tickerid, "240", ta.lowest(low, compressedLookback), lookahead=barmerge.lookahead_off)
+
+// Step 1b: Apply Zone Height Cap if enabled (v17.11)
+float rawZoneHeight = h4RangeHighRaw - h4RangeLowRaw
+float maxAllowedHeight = nz(h4ATR, 0.001) * maxZoneHeightATR
+bool  zoneHeightCapped = false
+
+float h4RangeHigh = h4RangeHighRaw
+float h4RangeLow  = h4RangeLowRaw
+
+if enableZoneHeightCap and not na(h4ATR) and rawZoneHeight > maxAllowedHeight
+    // Zone exceeds cap — try compressed range first
+    float compressedHeight = h4CompressedHigh - h4CompressedLow
+    if compressedHeight < rawZoneHeight and compressedHeight > 0
+        // Use compressed range if it's actually smaller
+        h4RangeHigh := h4CompressedHigh
+        h4RangeLow  := h4CompressedLow
+    else
+        // Fallback: compress symmetrically around midpoint
+        float midpoint = (h4RangeHighRaw + h4RangeLowRaw) / 2.0
+        float halfMax  = maxAllowedHeight / 2.0
+        h4RangeHigh := midpoint + halfMax
+        h4RangeLow  := midpoint - halfMax
+    zoneHeightCapped := true
+
+// Step 1c: Apply Minimum Zone Height Floor (v17.11)
+// Zones cannot collapse below 2 × H4 ATR to ensure meaningful PZ/DZ/EQ
+float minZoneHeight = nz(h4ATR, 0.001) * 2.0
+float currentHeight = h4RangeHigh - h4RangeLow
+if not na(h4ATR) and currentHeight < minZoneHeight
+    float expansion = (minZoneHeight - currentHeight) / 2.0
+    h4RangeHigh := h4RangeHigh + expansion
+    h4RangeLow  := h4RangeLow - expansion
+
+// Step 2: Derive equilibrium and range from (potentially adjusted) 4H values
+h4Eq    = (h4RangeHigh + h4RangeLow) / 2.0
+h4Range = h4RangeHigh - h4RangeLow
+
+// Step 3: Premium & Discount zone levels (derived from 4H range)
+// v17.9: With neutralZoneWidth=33.3 (classic thirds):
+//   h4PremiumBottom = h4Eq + range*33.3/200 = h4Eq + range*0.1665 ≈ at 66.7% level
+//   h4DiscountTop   = h4Eq - range*33.3/200 = h4Eq - range*0.1665 ≈ at 33.3% level
+//   Example: range 211-216 (5pts), Eq=213.5
+//     PremiumBottom = 213.5 + 5*0.1665 = 214.33 (≈ top 1/3 starts)
+//     DiscountTop   = 213.5 - 5*0.1665 = 212.67 (≈ bottom 1/3 ends)
+//     EQ zone = 212.67 - 214.33 (middle third) ✓
+h4PremiumTop     = h4RangeHigh
+h4PremiumBottom  = h4Eq + (h4Range * neutralZoneWidth / 200.0)
+h4DiscountTop    = h4Eq - (h4Range * neutralZoneWidth / 200.0)
+h4DiscountBottom = h4RangeLow
+
+// Step 4: Get latest 4H close for bias determination
+h4Close = request.security(syminfo.tickerid, "240", close, lookahead=barmerge.lookahead_off)
+
+// Step 5: Bias determination using 4H close vs 4H-computed zones
+// 1 = bullish (4H close above premium bottom), -1 = bearish (below discount top), 0 = neutral
+h4Bias = h4Close > h4PremiumBottom ? 1 : h4Close < h4DiscountTop ? -1 : 0
+
+// Step 6: Zone Position Detection (v17.8 FIX — independent of bias direction)
+// Uses CURRENT price vs 4H-locked zone boundaries to determine PZ/DZ/EQ
+inPremiumZone  = close > h4PremiumBottom
+inDiscountZone = close < h4DiscountTop
+inEquilibriumZone = not inPremiumZone and not inDiscountZone
+pdZone = inPremiumZone ? 1 : inDiscountZone ? 0 : -1
+
+// Zone position string and color (purely based on price location in 4H range)
+string h4ZoneStr = inPremiumZone ? "PZ (red)" : inDiscountZone ? "DZ (green)" : "EQ (gray)"
+color  h4ZoneColor = inPremiumZone ? color.red : inDiscountZone ? color.green : color.gray
+
+// Bias direction string (purely based on h4Close vs 4H zones)
+string h4DirStr = h4Bias == 1 ? "BULLISH" : h4Bias == -1 ? "BEARISH" : "NEUTRAL"
+
+// Combined display: "[DIRECTION] | [ZONE POSITION]"
+h4BiasStr = h4DirStr + " | " + h4ZoneStr
+
+// v17.10: Explicit H4 Bias neutral boolean — used by Guardian & Action Step gates
+bool h4BiasNeutral  = h4Bias == 0
+bool h4BiasBullish  = h4Bias == 1
+bool h4BiasBearish  = h4Bias == -1
+
+// Fib level for reference (used by other components)
+h4FibLevel = h4Range > 0 ? (close - h4RangeLow) / h4Range * 100 : 50.0
+
+// ============================================================================
+// v17.16 SECTION: DAILY HIGH/LOW & ASIAN SESSION HIGH/LOW
+// ============================================================================
+
+// --- Daily High/Low (current trading day) ---
+float dailyHigh = request.security(syminfo.tickerid, "D", high, lookahead=barmerge.lookahead_off)
+float dailyLow  = request.security(syminfo.tickerid, "D", low, lookahead=barmerge.lookahead_off)
+
+// --- Asian Session High/Low (Tokyo 00:00-09:00 UTC) ---
+// We track the Asian session range using intra-bar tracking
+var float asianSessionHigh = na
+var float asianSessionLow  = na
+var bool  asianSessionActive = false
+
+// Asian session: 00:00-09:00 UTC (19:00-04:00 EST approximately)
+asianHourUTC = hour(time, "UTC")
+isAsianSession = asianHourUTC >= 0 and asianHourUTC < 9
+
+// Track Asian session H/L
+if isAsianSession
+    if not asianSessionActive
+        // New Asian session start — reset
+        asianSessionHigh := high
+        asianSessionLow  := low
+        asianSessionActive := true
+    else
+        asianSessionHigh := math.max(nz(asianSessionHigh, high), high)
+        asianSessionLow  := math.min(nz(asianSessionLow, low), low)
+else
+    asianSessionActive := false
+
+// Ensure valid values
+float asiHi = nz(asianSessionHigh, high)
+float asiLo = nz(asianSessionLow, low)
+
+// --- Proximity scores for confluence (0 or 1, binary component) ---
+// Daily H/L proximity: price within 0.3% of daily high or low = 1 point
+float dailyRange = nz(dailyHigh - dailyLow, 1.0)
+float dailyHiDist = math.abs(close - nz(dailyHigh, close))
+float dailyLoDist = math.abs(close - nz(dailyLow, close))
+float dailyProximityPct = math.min(dailyHiDist, dailyLoDist) / math.max(dailyRange, syminfo.mintick) * 100
+bool nearDailyLevel = dailyProximityPct < 15.0  // within 15% of range from Daily H or L
+
+// Asian H/L proximity: price within 15% of Asian range from Asian H or L
+float asianRange = nz(asiHi - asiLo, 1.0)
+float asianHiDist = math.abs(close - asiHi)
+float asianLoDist = math.abs(close - asiLo)
+float asianProximityPct = math.min(asianHiDist, asianLoDist) / math.max(asianRange, syminfo.mintick) * 100
+bool nearAsianLevel = asianProximityPct < 15.0  // within 15% of Asian range from Asian H or L
+
+// --- Draw Daily High/Low Lines ---
+var line dailyHighLine = na
+var line dailyLowLine  = na
+var label dailyHighLabel = na
+var label dailyLowLabel  = na
+
+if showDailyHL and barstate.islast
+    // Delete previous lines/labels
+    line.delete(dailyHighLine)
+    line.delete(dailyLowLine)
+    label.delete(dailyHighLabel)
+    label.delete(dailyLowLabel)
+    // Draw new lines
+    dailyHighLine := line.new(bar_index - 50, dailyHigh, bar_index + 50, dailyHigh, color=dailyLineColor, style=line.style_dashed, width=1, extend=extend.right)
+    dailyLowLine  := line.new(bar_index - 50, dailyLow, bar_index + 50, dailyLow, color=dailyLineColor, style=line.style_dashed, width=1, extend=extend.right)
+    // Labels
+    dailyHighLabel := label.new(bar_index + 5, dailyHigh, "Daily H", style=label.style_label_left, color=color.new(color.blue, 80), textcolor=color.white, size=size.tiny)
+    dailyLowLabel  := label.new(bar_index + 5, dailyLow, "Daily L", style=label.style_label_left, color=color.new(color.blue, 80), textcolor=color.white, size=size.tiny)
+
+// --- Draw Asian High/Low Lines ---
+var line asianHighLine = na
+var line asianLowLine  = na
+var label asianHighLabel = na
+var label asianLowLabel  = na
+
+if showAsianHL and barstate.islast
+    // Delete previous lines/labels
+    line.delete(asianHighLine)
+    line.delete(asianLowLine)
+    label.delete(asianHighLabel)
+    label.delete(asianLowLabel)
+    // Draw new lines
+    asianHighLine := line.new(bar_index - 50, asiHi, bar_index + 50, asiHi, color=asianLineColor, style=line.style_dotted, width=1, extend=extend.right)
+    asianLowLine  := line.new(bar_index - 50, asiLo, bar_index + 50, asiLo, color=asianLineColor, style=line.style_dotted, width=1, extend=extend.right)
+    // Labels
+    asianHighLabel := label.new(bar_index + 5, asiHi, "Asian H", style=label.style_label_left, color=color.new(color.orange, 80), textcolor=color.white, size=size.tiny)
+    asianLowLabel  := label.new(bar_index + 5, asiLo, "Asian L", style=label.style_label_left, color=color.new(color.orange, 80), textcolor=color.white, size=size.tiny)
+
+
+// Invalidation tracking (v16.9 Feature D)
+var bool h4Invalidated = false
+var float h4InvalLevel = na
+
+// v17.1 directional invalidation state tracking
+var bool longInvalidated  = false
+var bool shortInvalidated = false
+var bool activeLongSetup  = false
+var bool activeShortSetup = false
+var bool guardianWasWaiting = false
+var int  invalidationReasonLong  = 0
+var int  invalidationReasonShort = 0
+
+// ============================================================================
+// v17.3 PRIORITY 1: STATE MACHINE — Active Signal Tracking
+// ============================================================================
+// States: IDLE (0) = no signal, ACTIVE (1) = signal live, TERMINAL (2) = closed
+// Only 1 active signal per direction. New signals BLOCKED while ACTIVE.
+var int  smStateLong  = 0  // 0=IDLE, 1=ACTIVE
+var int  smStateShort = 0  // 0=IDLE, 1=ACTIVE
+var float smEntryLong  = na
+var float smSLLong     = na
+var float smTPLong     = na
+var float smEntryShort = na
+var float smSLShort    = na
+var float smTPShort    = na
+var int  smBarLong     = 0  // bar when signal was activated
+var int  smBarShort    = 0
+
+// TP/SL hit detection for state machine cleanup
+smTPHitLong   = smStateLong == 1 and not na(smTPLong) and high >= smTPLong
+smSLHitLong   = smStateLong == 1 and not na(smSLLong) and low <= smSLLong
+smTPHitShort  = smStateShort == 1 and not na(smTPShort) and low <= smTPShort
+smSLHitShort  = smStateShort == 1 and not na(smSLShort) and high >= smSLShort
+
+// Timeout: auto-clear after 50 bars if no TP/SL hit (safety valve)
+smTimeoutLong  = smStateLong == 1 and (bar_index - smBarLong) > 50
+smTimeoutShort = smStateShort == 1 and (bar_index - smBarShort) > 50
+
+// Terminal transitions (TP hit, SL hit, or timeout)
+if smTPHitLong or smSLHitLong or smTimeoutLong
+    smStateLong := 0
+    smEntryLong := na
+    smSLLong    := na
+    smTPLong    := na
+
+if smTPHitShort or smSLHitShort or smTimeoutShort
+    smStateShort := 0
+    smEntryShort := na
+    smSLShort    := na
+    smTPShort    := na
+
+// ============================================================================
+
+h4BiasChanged = ta.change(h4Bias) != 0
+if h4BiasChanged
+    h4Invalidated := false
+    h4InvalLevel := na
+
+// H4 bias alignment with signal direction
+biasAlignedLong  = h4Bias == 1 or h4Bias == 0
+biasAlignedShort = h4Bias == -1 or h4Bias == 0
+
+// ============================================================================
+// v17.3 PRIORITY 2: H4 BIAS DIRECTIONAL FILTER HELPERS
+// ============================================================================
+// Determine if a signal direction is WITH-TREND or COUNTER-TREND
+isCounterTrendLong  = h4Bias == -1  // LONG in BEARISH = counter-trend
+isCounterTrendShort = h4Bias == 1   // SHORT in BULLISH = counter-trend
+
+// ============================================================================
+// SECTION 4: STRUCTURE DETECTION (M5/M15)
+// ============================================================================
+
+// --- Swing highs and lows ---
+swHigh = ta.pivothigh(high, swingLen, swingLen)
+swLow  = ta.pivotlow(low, swingLen, swingLen)
+
+var float lastSwingHigh = na
+var float lastSwingLow  = na
+var int   lastSwHighBar = 0
+var int   lastSwLowBar  = 0
+
+if not na(swHigh)
+    lastSwingHigh := swHigh
+    lastSwHighBar := bar_index - swingLen
+
+if not na(swLow)
+    lastSwingLow := swLow
+    lastSwLowBar := bar_index - swingLen
+
+// --- BOS and CHoCH detection ---
+var float prevSwingHigh = na
+var float prevSwingLow  = na
+var int   structureDir  = 0  // 1=bullish, -1=bearish
+
+bosUp   = false
+bosDn   = false
+chochUp = false
+chochDn = false
+
+if not na(swHigh) and not na(prevSwingHigh)
+    if close > lastSwingHigh and structureDir == 1
+        bosUp := true
+    if close > lastSwingHigh and structureDir == -1
+        chochUp := true
+        structureDir := 1
+
+if not na(swLow) and not na(prevSwingLow)
+    if close < lastSwingLow and structureDir == -1
+        bosDn := true
+    if close < lastSwingLow and structureDir == 1
+        chochDn := true
+        structureDir := -1
+
+if not na(swHigh)
+    prevSwingHigh := swHigh
+if not na(swLow)
+    prevSwingLow := swLow
+
+// Structure state code
+var int structureStateCode = 0
+if bosUp or bosDn
+    structureStateCode := 1
+if chochUp or chochDn
+    structureStateCode := 4
+
+// M15 structure
+[m15High, m15Low, m15Close] = request.security(syminfo.tickerid, "15", [high, low, close])
+m15SwHigh = request.security(syminfo.tickerid, "15", ta.pivothigh(high, m15SwingLen, m15SwingLen))
+m15SwLow  = request.security(syminfo.tickerid, "15", ta.pivotlow(low, m15SwingLen, m15SwingLen))
+
+// v17.1: M15 CHoCH/BOS reversal proxy (used for hard invalidation)
+m15BullBreak = request.security(syminfo.tickerid, "15", ta.crossover(close, ta.highest(high, m15SwingLen)[1]))
+m15BearBreak = request.security(syminfo.tickerid, "15", ta.crossunder(close, ta.lowest(low, m15SwingLen)[1]))
+
+// MSS detection
+var float mssLevel = na
+var int   mssBar   = 0
+var int   mssDir   = 0
+var int   mssState = 0
+
+mssUp = chochUp
+mssDn = chochDn
+
+if mssUp
+    mssLevel := lastSwingLow
+    mssBar   := bar_index
+    mssDir   := 1
+    mssState := 1
+
+if mssDn
+    mssLevel := lastSwingHigh
+    mssBar   := bar_index
+    mssDir   := -1
+    mssState := 1
+
+mssRetraceExpired = mssState == 1 and (bar_index - mssBar) > mssRetraceBars
+if mssRetraceExpired
+    mssState := 0
+
+// ============================================================================
+// SECTION 5: FVG DETECTION
+// ============================================================================
+
+bullFVG = low > high[2] and (low - high[2]) > atrValue * fvgMinSize / 100
+bearFVG = high < low[2] and (low[2] - high) > atrValue * fvgMinSize / 100
+
+var float fvgTop = na
+var float fvgBot = na
+var int   fvgDir = 0
+
+if bullFVG
+    fvgTop := low
+    fvgBot := high[2]
+    fvgDir := 1
+
+if bearFVG
+    fvgTop := low[2]
+    fvgBot := high
+    fvgDir := -1
+
+fvgActive = not na(fvgTop) and ((fvgDir == 1 and close > fvgBot) or (fvgDir == -1 and close < fvgTop))
+
+// ============================================================================
+// SECTION 6: ORDER BLOCK DETECTION
+// ============================================================================
+
+bullOBCond = close[1] < open[1] and close > open and (close - open) > atrValue * 0.5
+bearOBCond = close[1] > open[1] and close < open and (open - close) > atrValue * 0.5
+
+var float obHigh = na
+var float obLow  = na
+var int   obDir  = 0
+var int   obRefineLevel = 0
+
+if bullOBCond
+    obHigh := high[1]
+    obLow  := low[1]
+    obDir  := 1
+    obRefineLevel := math.min(obRefinementDepth, 3)
+
+if bearOBCond
+    obHigh := high[1]
+    obLow  := low[1]
+    obDir  := -1
+    obRefineLevel := math.min(obRefinementDepth, 3)
+
+obMid = (obHigh + obLow) / 2.0
+priceInBullOB = obDir == 1 and close >= obLow and close <= obMid
+priceInBearOB = obDir == -1 and close >= obMid and close <= obHigh
+
+// ============================================================================
+// SECTION 7: POI SCORING SYSTEM
+// ============================================================================
+
+poiScore = 0
+poiScore += (fvgActive ? 1 : 0)
+poiScore += (priceInBullOB or priceInBearOB ? 1 : 0)
+poiScore += (inKillZone() ? 1 : 0)
+poiScore += (h4Bias != 0 ? 1 : 0)
+poiScore += (structureStateCode >= 3 ? 1 : 0)
+
+// ============================================================================
+// SECTION 8: DISPLACEMENT TRAP (DT) STATE MACHINE
+// ============================================================================
+
+var int dtStage = 0
+var int dtDir   = 0
+var int dtLastProgressBar = 0  // v17.5: Track last bar where dtStage advanced
+
+displacement = math.abs(close - open) / atrValue
+
+sweepHigh = high > lastSwingHigh and close < lastSwingHigh
+sweepLow  = low < lastSwingLow and close > lastSwingLow
+
+// v17.5 FIX 2: dtStage RESET CONDITIONS (prevents permanent "Stage 5/5")
+// Reset on H4 bias change
+if h4BiasChanged
+    dtStage := 0
+    dtDir   := 0
+    dtLastProgressBar := bar_index
+
+// Reset on session/day boundary
+if newDay != 0
+    dtStage := 0
+    dtDir   := 0
+    dtLastProgressBar := bar_index
+
+// Inactivity decay: auto-reset if no progression in 30 bars
+if dtStage > 0 and (bar_index - dtLastProgressBar) > 30
+    dtStage := 0
+    dtDir   := 0
+
+// --- Normal DT progression (unchanged from v17.5) ---
+if dtStage == 0
+    if h4Bias == 1 and sweepLow
+        dtStage := 2
+        dtDir   := 1
+        dtLastProgressBar := bar_index
+    if h4Bias == -1 and sweepHigh
+        dtStage := 2
+        dtDir   := -1
+        dtLastProgressBar := bar_index
+
+// v17.2: Relaxed from 1.5 to 1.2× ATR
+if dtStage == 2 and displacement > 1.2
+    dtStage := 3
+    dtLastProgressBar := bar_index
+
+if dtStage == 3 and fvgActive
+    dtStage := 4
+    dtLastProgressBar := bar_index
+
+if dtStage == 4
+    if dtDir == 1 and close <= fvgTop and close >= fvgBot
+        dtStage := 5
+        dtLastProgressBar := bar_index
+    if dtDir == -1 and close >= fvgBot and close <= fvgTop
+        dtStage := 5
+        dtLastProgressBar := bar_index
+
+if dtDir == 1 and chochDn
+    dtStage := 0
+    dtDir   := 0
+if dtDir == -1 and chochUp
+    dtStage := 0
+    dtDir   := 0
+
+// ============================================================================
+// SECTION 9: KILL ZONE & LIQUIDITY
+// ============================================================================
+
+kzCode = killZoneCode()
+kzActive = enableKZ ? inKillZone() : true
+
+var float asianHigh = na
+var float asianLow  = na
+if isAsian()
+    asianHigh := na(asianHigh) ? high : math.max(asianHigh, high)
+    asianLow  := na(asianLow) ? low : math.min(asianLow, low)
+
+if newDay != 0
+    asianHigh := na
+    asianLow  := na
+
+asianRangePips = not na(asianHigh) and not na(asianLow) ? (asianHigh - asianLow) / pipSize : 0
+
+sweepStrength = 0
+if sweepHigh or sweepLow
+    sweepStrength := displacement > 1.5 ? 3 : displacement > 1.0 ? 2 : 1
+
+// ============================================================================
+// SECTION 10: GUARDIAN SYSTEM v2.0 (3-Phase Detection)
+// ============================================================================
+
+var int guardianCode = 0
+
+guardianEqHigh = h4Eq + (h4Range * guardianNeutralPct / 200.0)
+guardianEqLow  = h4Eq - (h4Range * guardianNeutralPct / 200.0)
+
+calcGuardian(sigDir) =>
+    code = 0
+    if enableGuardian
+        if sigDir == 1
+            if close < guardianEqLow
+                code := 1
+            else if close > guardianEqHigh
+                if sweepStrength >= 2
+                    code := 3
+                else
+                    code := 5
+            else
+                code := 1
+        else if sigDir == -1
+            if close > guardianEqHigh
+                code := 2
+            else if close < guardianEqLow
+                if sweepStrength >= 2
+                    code := 4
+                else
+                    code := 6
+            else
+                code := 2
+    else
+        code := sigDir == 1 ? 1 : 2
+    code
+
+// ============================================================================
+// SECTION 11: MOMENTUM SCORING
+// ============================================================================
+
+var int momentumScore = 0
+rsiVal  = ta.rsi(close, 14)
+stochK  = ta.stoch(close, high, low, 14)
+
+exhaustLong  = rsiVal > 70 or stochK > 80
+exhaustShort = rsiVal < 30 or stochK < 20
+momentumWickRatio = math.abs(close - open) > 0 ? (high - low) / math.abs(close - open) : 1.0
+momentumExhaust   = momentumWickRatio > 3.0
+
+momentumScore := 0
+if exhaustLong and structureDir == 1
+    momentumScore += 1
+if exhaustShort and structureDir == -1
+    momentumScore += 1
+if momentumExhaust
+    momentumScore += 1
+momentumChange = ta.change(momentumScore)
+if momentumScore >= 2 and momentumChange > 0
+    momentumScore := 3
+
+momentumFlags = momentumScore >= 2 ? "WICK_HEAVY" : momentumScore >= 1 ? "DECEL" : "CLEAN"
+
+// ============================================================================
+// SECTION 12: IPM DETECTION
+// ============================================================================
+
+var bool ipmLongSetup  = false
+var bool ipmShortSetup = false
+var int  ipmSweepBar   = 0
+
+ipmSwH = ta.pivothigh(high, ipmMinorSwingLen, ipmMinorSwingLen)
+ipmSwL = ta.pivotlow(low, ipmMinorSwingLen, ipmMinorSwingLen)
+
+var float ipmInducementLevel = na
+ipmInduceSweepLong  = not na(ipmSwL) and low < ipmSwL and close > ipmSwL
+ipmInduceSweepShort = not na(ipmSwH) and high > ipmSwH and close < ipmSwH
+
+if enableIPM
+    if ipmInduceSweepLong and h4Bias == 1 and displacement > 1.0
+        ipmLongSetup := true
+        ipmSweepBar  := bar_index
+        ipmInducementLevel := ipmSwL
+    if ipmInduceSweepShort and h4Bias == -1 and displacement > 1.0
+        ipmShortSetup := true
+        ipmSweepBar   := bar_index
+        ipmInducementLevel := ipmSwH
+
+if ipmLongSetup and (bar_index - ipmSweepBar) > ipmSweepMaxBars
+    ipmLongSetup := false
+if ipmShortSetup and (bar_index - ipmSweepBar) > ipmSweepMaxBars
+    ipmShortSetup := false
+
+// ============================================================================
+// SECTION 13: AMD PHASE TRACKING
+// ============================================================================
+
+var int amdPhase = 0
+rangeSize  = ta.highest(high, amdLookback) - ta.lowest(low, amdLookback)
+rangePct   = rangeSize / close * 100
+
+if enableAMD
+    if rangePct < 0.3
+        amdPhase := 1
+    else if displacement > 2.0
+        amdPhase := 2
+    else if amdPhase == 2 and displacement < 0.5
+        amdPhase := 3
+
+amdPhaseStr = amdPhase == 1 ? "ACCUMULATION" : amdPhase == 2 ? "MANIPULATION" : amdPhase == 3 ? "DISTRIBUTION" : "NONE"
+
+// ============================================================================
+// SECTION 14: v17.1 COOLDOWN & ZONE-MERGE TRACKING
+// ============================================================================
+
+// --- Cooldown tracking: bar_index of last fire per signal type & direction ---
+var int lastSniperLongBar   = 0
+var int lastSniperShortBar  = 0
+var int lastTrapLongBar     = 0
+var int lastTrapShortBar    = 0
+var int lastCTLiteLongBar   = 0
+var int lastCTLiteShortBar  = 0
+var int lastTier2LongBar    = 0
+var int lastTier2ShortBar   = 0
+var int lastBuildLongBar    = 0
+var int lastBuildShortBar   = 0
+var int lastLiteLongBar     = 0
+var int lastLiteShortBar    = 0
+var int lastReEntryLongBar  = 0
+var int lastReEntryShortBar = 0
+
+// Cooldown check function
+isCooledDown(lastBar) =>
+    (bar_index - lastBar) >= cooldownWindow
+
+// --- Zone-merge tracking: prevent multiple signals in same POI zone ---
+var float lastSignalZoneHigh = na
+var float lastSignalZoneLow  = na
+var int   lastSignalZoneBar  = 0
+
+isNewZone() =>
+    if not enableZoneMerge
+        true
+    else
+        zoneHigh = not na(obHigh) ? obHigh : not na(fvgTop) ? fvgTop : high
+        zoneLow  = not na(obLow) ? obLow : not na(fvgBot) ? fvgBot : low
+        noOverlap = na(lastSignalZoneHigh) or zoneLow > lastSignalZoneHigh or zoneHigh < lastSignalZoneLow
+        expired   = (bar_index - lastSignalZoneBar) > cooldownWindow * 2
+        noOverlap or expired
+
+markZoneUsed() =>
+    zH = not na(obHigh) ? obHigh : not na(fvgTop) ? fvgTop : high
+    zL = not na(obLow) ? obLow : not na(fvgBot) ? fvgBot : low
+    [zH, zL, bar_index]
+
+// ============================================================================
+// SECTION 15: SIGNAL GENERATION (v17.3 — STATE MACHINE + H4 HARD FILTER)
+// ============================================================================
+
+// --- v17.1 FIX 2: All signals gated by barstate.isconfirmed ---
+confirmed = barstate.isconfirmed
+
+// --- Alignment check ---
+alignmentOK_long  = h4Bias >= 0 and not h4Invalidated
+alignmentOK_short = h4Bias <= 0 and not h4Invalidated
+alignmentConflict = (h4Bias == 1 and structureDir == -1) or (h4Bias == -1 and structureDir == 1)
+alignmentStr = alignmentConflict ? "CONFLICT" : "ALIGNED"
+
+// --- Quality score ---
+qualityScore = 0.0
+qualityScore += poiScore * 15.0
+qualityScore += (displacement > 1.5 ? 15.0 : displacement > 1.0 ? 10.0 : 5.0)
+qualityScore += (kzActive ? 10.0 : 0.0)
+qualityScore += (fvgActive ? 10.0 : 0.0)
+qualityScore += (obRefineLevel >= 2 ? 10.0 : 5.0)
+qualityScore := math.min(qualityScore, 100.0)
+
+// --- Entry/SL/TP calculation ---
+calcEntryLong()  => obDir == 1 ? obMid : close
+calcEntrySht()   => obDir == -1 ? obMid : close
+calcSLLong()     => obDir == 1 ? obLow - atrValue * 0.2 : low - atrValue * 0.5
+calcSLShort()    => obDir == -1 ? obHigh + atrValue * 0.2 : high + atrValue * 0.5
+
+entryLong  = calcEntryLong()
+entryShort = calcEntrySht()
+slLong     = calcSLLong()
+slShort    = calcSLShort()
+tpLong     = tpModeInput == "Fixed R:R" ? entryLong + (entryLong - slLong) * defaultRR : h4PremiumBottom
+tpShort    = tpModeInput == "Fixed R:R" ? entryShort - (slShort - entryShort) * defaultRR : h4DiscountTop
+
+// =========================================================================
+// v17.5 FIX 1: REAL-TIME CONFLUENCE SCORE (replaces cumulative signalCounter)
+// =========================================================================
+// Computed fresh every bar from 6 real-time conditions. Range: 0-6.
+// Subject to caps from Guardian, Kill Zone, and State Machine.
+confluenceRaw = 0
+confluenceRaw += (dtStage >= 4 ? 1 : 0)             // (1) Sniper Progress advanced
+confluenceRaw += (poiScore >= 3 ? 1 : 0)             // (2) POI quality threshold
+confluenceRaw += (displacement >= 0.5 ? 1 : 0)       // (3) Displacement active
+confluenceRaw += (momentumScore < 2 ? 1 : 0)          // (4) Momentum clean
+confluenceRaw += (kzActive ? 1 : 0)                   // (5) Kill Zone active
+confluenceRaw += (not alignmentConflict ? 1 : 0)      // (6) Alignment valid
+confluenceRaw += (nearDailyLevel ? 1 : 0)             // (7) v17.16: Daily H/L proximity
+confluenceRaw += (nearAsianLevel ? 1 : 0)             // (8) v17.16: Asian H/L proximity
+
+// Hard gate: cannot exceed 3 unless minimum quality thresholds met
+confluenceScore = confluenceRaw
+if not (poiScore >= 3 and displacement >= 0.5)
+    confluenceScore := math.min(confluenceScore, 3)
+
+// v17.5 FIX 6: Invalidation label deduplication tracking
+var int lastInvalBarLong  = -1  // bar_index of last long invalidation label
+var int lastInvalBarShort = -1  // bar_index of last short invalidation label
+
+// --- Guardian for each direction (computed once, used everywhere) ---
+guardLong  = calcGuardian(1)
+guardShort = calcGuardian(-1)
+guardianCode := h4Bias >= 0 ? guardLong : guardShort
+
+sniperLabelLong  = guardLong == 1 ? "🎯 SNIPER BUY" : guardLong == 3 ? "🔄 RETRACE BUY" : guardLong == 5 ? "△ TRAP BUY" : ""
+sniperLabelShort = guardShort == 2 ? "🎯 SNIPER SELL" : guardShort == 4 ? "🔄 RETRACE SELL" : guardShort == 6 ? "△ TRAP SELL" : ""
+
+// Re-entry state vars
+var bool reEntryLongArmed  = false
+var bool reEntryShortArmed = false
+var float reEntryLongLevel = na
+var float reEntryShortLevel = na
+
+// =========================================================================
+// SECTION 15A: v17.3 HARD INVALIDATION ENGINE (directional + guardian aware)
+// =========================================================================
+
+// Guardian directional state + WAITING downgrade memory
+guardianLongActionable  = guardLong == 1 or guardLong == 3 or guardLong == 5
+guardianShortActionable = guardShort == 2 or guardShort == 4 or guardShort == 6
+guardianWaiting = enableGuardian and (alignmentConflict or (h4Bias == 0 and dtStage < 3) or (not guardianLongActionable and not guardianShortActionable))
+guardianDowngradeToWaiting = confirmed and guardianWaiting and not guardianWasWaiting
+
+// Directional invalidation trigger components (6 hard rules)
+structureFlipAgainstLong  = confirmed and (chochDn or bosDn or m15BearBreak)
+structureFlipAgainstShort = confirmed and (chochUp or bosUp or m15BullBreak)
+alignmentShiftAgainstLong  = confirmed and alignmentConflict and structureDir == -1
+alignmentShiftAgainstShort = confirmed and alignmentConflict and structureDir == 1
+// v17.2 FIX: POI drop only invalidates if score drops to 0
+poiDropAgainstLong  = confirmed and activeLongSetup and poiScore == 0
+poiDropAgainstShort = confirmed and activeShortSetup and poiScore == 0
+// v17.2 FIX: P&D shift requires crossing equilibrium
+pdShiftAgainstLong  = confirmed and close < h4Eq and close[1] >= h4Eq
+pdShiftAgainstShort = confirmed and close > h4Eq and close[1] <= h4Eq
+// v17.2 FIX: Liquidity reversal requires sweep AGAINST setup direction with displacement
+liquidityReversalAgainstLong  = confirmed and sweepHigh and displacement > 1.0 and activeLongSetup
+liquidityReversalAgainstShort = confirmed and sweepLow and displacement > 1.0 and activeShortSetup
+
+longInvalidationTrigger  = structureFlipAgainstLong or alignmentShiftAgainstLong or (guardianDowngradeToWaiting and activeLongSetup) or poiDropAgainstLong or pdShiftAgainstLong or liquidityReversalAgainstLong
+shortInvalidationTrigger = structureFlipAgainstShort or alignmentShiftAgainstShort or (guardianDowngradeToWaiting and activeShortSetup) or poiDropAgainstShort or pdShiftAgainstShort or liquidityReversalAgainstShort
+
+longKilledThisBar  = confirmed and activeLongSetup and longInvalidationTrigger
+shortKilledThisBar = confirmed and activeShortSetup and shortInvalidationTrigger
+
+longInvalidationReason = structureFlipAgainstLong ? 1 : alignmentShiftAgainstLong ? 2 : guardianDowngradeToWaiting ? 3 : poiDropAgainstLong ? 4 : pdShiftAgainstLong ? 5 : liquidityReversalAgainstLong ? 6 : 0
+shortInvalidationReason = structureFlipAgainstShort ? 1 : alignmentShiftAgainstShort ? 2 : guardianDowngradeToWaiting ? 3 : poiDropAgainstShort ? 4 : pdShiftAgainstShort ? 5 : liquidityReversalAgainstShort ? 6 : 0
+
+// =========================================================================
+// v17.3 PRIORITY 3: FUNCTIONAL INVALIDATION — Reset state machine on kill
+// =========================================================================
+if longKilledThisBar
+    longInvalidated := true
+    activeLongSetup := false
+    reEntryLongArmed := false
+    invalidationReasonLong := longInvalidationReason
+    // v17.3: RESET STATE MACHINE — allow new signals after invalidation
+    smStateLong := 0
+    smEntryLong := na
+    smSLLong    := na
+    smTPLong    := na
+    // v17.5 FIX 2: Reset Sniper Progress on invalidation
+    dtStage := 0
+    dtDir   := 0
+
+if shortKilledThisBar
+    shortInvalidated := true
+    activeShortSetup := false
+    reEntryShortArmed := false
+    invalidationReasonShort := shortInvalidationReason
+    // v17.3: RESET STATE MACHINE — allow new signals after invalidation
+    smStateShort := 0
+    smEntryShort := na
+    smSLShort    := na
+    smTPShort    := na
+    // v17.5 FIX 2: Reset Sniper Progress on invalidation
+    dtStage := 0
+    dtDir   := 0
+
+// =========================================================================
+// SECTION 15B: RAW SIGNAL CONDITIONS (before hierarchy/cooldown)
+// =========================================================================
+
+// --- TIER 1 (SNIPER) --- 
+// v17.2 FIX: Removed duplicate displacement >= 1.5 (already enforced at DT stage 2→3).
+// v17.2 FIX: Relaxed POI from >= 4 to >= 3.
+tier1LongRaw = dtStage >= 5 and dtDir == 1 and poiScore >= 3 and alignmentOK_long and kzActive and not h4Invalidated and momentumScore < 3
+tier1ShortRaw = dtStage >= 5 and dtDir == -1 and poiScore >= 3 and alignmentOK_short and kzActive and not h4Invalidated and momentumScore < 3
+
+// --- TIER 2 ---
+tier2LongRaw = dtStage >= 4 and dtDir == 1 and poiScore >= 3 and alignmentOK_long and displacement >= 1.0 and not h4Invalidated
+tier2ShortRaw = dtStage >= 4 and dtDir == -1 and poiScore >= 3 and alignmentOK_short and displacement >= 1.0 and not h4Invalidated
+
+// MSS-Retrace aware override
+tier2RetraceLong  = tier2LongRaw or (mssState >= 1 and mssDir == 1 and dtStage >= 4 and poiScore >= 3 and not h4Invalidated)
+tier2RetraceShort = tier2ShortRaw or (mssState >= 1 and mssDir == -1 and dtStage >= 4 and poiScore >= 3 and not h4Invalidated)
+
+// --- BUILDING ---
+buildingLongRaw  = dtStage >= 3 and dtStage < 5 and dtDir == 1 and poiScore >= minPOIforAlerts and sweepStrength >= 1
+buildingShortRaw = dtStage >= 3 and dtStage < 5 and dtDir == -1 and poiScore >= minPOIforAlerts and sweepStrength >= 1
+
+// --- LITE ---
+liteLongRaw  = biasAlignedLong and kzActive and poiScore >= 2 and not h4Invalidated and structureStateCode < 3 and sweepStrength >= 1
+liteShortRaw = biasAlignedShort and kzActive and poiScore >= 2 and not h4Invalidated and structureStateCode < 3 and sweepStrength >= 1
+
+// --- CT LITE ---
+// v17.1 FIX 4: Guardian gates CT Lite too. Also suppress during CONFLICT.
+ctLiteLongRaw  = h4Bias == -1 and structureDir == 1 and structureStateCode >= 3 and kzActive and poiScore >= 2 and not h4Invalidated and not alignmentConflict and (guardLong == 1 or guardLong == 3 or not enableGuardian)
+ctLiteShortRaw = h4Bias == 1 and structureDir == -1 and structureStateCode >= 3 and kzActive and poiScore >= 2 and not h4Invalidated and not alignmentConflict and (guardShort == 2 or guardShort == 4 or not enableGuardian)
+
+// ============================================================================
+// SECTION 15C: v17.5 5-POINT COUNTER-TREND HARD GATE
+// ============================================================================
+// Applied BEFORE hierarchy/cooldown to enforce directional discipline.
+//
+// WITH-TREND: normal POI >= 3 threshold (already in raw conditions)
+// COUNTER-TREND: ALL 5 MANDATORY checks must pass or signal is HARD BLOCKED:
+//   1. POI >= 4/5 (strict, not 3/5)
+//   2. Displacement >= 0.7× ATR (strong qualifying move)
+//   3. Momentum confirmation (momentumScore < 2, i.e. not exhausted)
+//   4. Guardian in upgraded/confirming state (code 1-4), NOT TRAP (5/6)
+//   5. Alignment NOT strongly opposed (not alignmentConflict)
+//
+// If ANY of the 5 checks fail → signal is COMPLETELY BLOCKED.
+
+// --- Individual counter-trend check components (for debugging/HUD) ---
+ctCheck1_poi_long   = poiScore >= 4
+ctCheck1_poi_short  = poiScore >= 4
+ctCheck2_disp_long  = displacement > 0.7
+ctCheck2_disp_short = displacement > 0.7
+ctCheck3_mom_long   = momentumScore < 2
+ctCheck3_mom_short  = momentumScore < 2
+ctCheck4_guard_long = guardLong >= 1 and guardLong <= 4   // NOT TRAP (5/6)
+ctCheck4_guard_short= guardShort >= 1 and guardShort <= 4 // NOT TRAP (5/6)
+ctCheck5_align_long = not alignmentConflict
+ctCheck5_align_short= not alignmentConflict
+
+// --- Combined 5-point counter-trend gate ---
+ct5PassLong  = ctCheck1_poi_long and ctCheck2_disp_long and ctCheck3_mom_long and ctCheck4_guard_long and ctCheck5_align_long
+ct5PassShort = ctCheck1_poi_short and ctCheck2_disp_short and ctCheck3_mom_short and ctCheck4_guard_short and ctCheck5_align_short
+
+// --- Final filter: pass if WITH-TREND, or if counter-trend AND all 5 checks pass ---
+ctFilterPassLong  = not isCounterTrendLong or ct5PassLong
+ctFilterPassShort = not isCounterTrendShort or ct5PassShort
+
+// Apply hard filter to ALL raw signals
+tier1LongFiltered   = tier1LongRaw and ctFilterPassLong
+tier1ShortFiltered  = tier1ShortRaw and ctFilterPassShort
+tier2RetraceLongF   = tier2RetraceLong and ctFilterPassLong
+tier2RetraceShortF  = tier2RetraceShort and ctFilterPassShort
+buildingLongF       = buildingLongRaw and ctFilterPassLong
+buildingShortF      = buildingShortRaw and ctFilterPassShort
+liteLongF           = liteLongRaw and ctFilterPassLong
+liteShortF          = liteShortRaw and ctFilterPassShort
+// CT Lite is inherently counter-trend; apply ALL 5 strict checks always
+ctLiteLongFiltered  = ctLiteLongRaw and ct5PassLong
+ctLiteShortFiltered = ctLiteShortRaw and ct5PassShort
+
+// ============================================================================
+// SECTION 15D: v17.3 HIERARCHY, COOLDOWN, ZONE-MERGE & STATE MACHINE
+// ============================================================================
+
+// v17.1 reset logic: once fresh directional setup appears, clear invalidated gate
+newLongSetupCandidate  = confirmed and (tier1LongFiltered or tier2RetraceLongF or buildingLongF or liteLongF or ctLiteLongFiltered) and not longInvalidationTrigger
+newShortSetupCandidate = confirmed and (tier1ShortFiltered or tier2RetraceShortF or buildingShortF or liteShortF or ctLiteShortFiltered) and not shortInvalidationTrigger
+if longInvalidated and newLongSetupCandidate
+    longInvalidated := false
+    invalidationReasonLong := 0
+if shortInvalidated and newShortSetupCandidate
+    shortInvalidated := false
+    invalidationReasonShort := 0
+
+// v17.2 FIX: Don't block direction if invalidation was just cleared
+allowLongDirection  = not longInvalidated
+allowShortDirection = not shortInvalidated
+
+// =========================================================================
+// v17.3 STATE MACHINE GATE: Block signals if already ACTIVE in that direction
+// =========================================================================
+smAllowLong  = smStateLong == 0   // IDLE — can accept new signal
+smAllowShort = smStateShort == 0  // IDLE — can accept new signal
+
+// TIER 1 FINAL (highest priority — no suppression from above)
+sniperLong  = confirmed and allowLongDirection and smAllowLong and enableTier1 and tier1LongFiltered and isCooledDown(lastSniperLongBar) and isNewZone()
+sniperShort = confirmed and allowShortDirection and smAllowShort and enableTier1 and tier1ShortFiltered and isCooledDown(lastSniperShortBar) and isNewZone()
+
+// TIER 2 FINAL — suppressed if Sniper active in same direction
+tier2LongFire  = confirmed and allowLongDirection and smAllowLong and enableTier2 and tier2RetraceLongF and not sniperLong and isCooledDown(lastTier2LongBar) and isNewZone()
+tier2ShortFire = confirmed and allowShortDirection and smAllowShort and enableTier2 and tier2RetraceShortF and not sniperShort and isCooledDown(lastTier2ShortBar) and isNewZone()
+
+// BUILDING FINAL — suppressed if Sniper or Tier2 active
+buildLongFire  = confirmed and allowLongDirection and smAllowLong and enableBuilding and buildingLongF and kzActive and not sniperLong and not tier2LongFire and isCooledDown(lastBuildLongBar)
+buildShortFire = confirmed and allowShortDirection and smAllowShort and enableBuilding and buildingShortF and kzActive and not sniperShort and not tier2ShortFire and isCooledDown(lastBuildShortBar)
+
+// LITE FINAL — suppressed if any higher tier active in same direction
+liteLongFire  = confirmed and allowLongDirection and smAllowLong and enableLite and liteLongF and not sniperLong and not tier2LongFire and not buildLongFire and isCooledDown(lastLiteLongBar) and isNewZone()
+liteShortFire = confirmed and allowShortDirection and smAllowShort and enableLite and liteShortF and not sniperShort and not tier2ShortFire and not buildShortFire and isCooledDown(lastLiteShortBar) and isNewZone()
+
+// CT LITE FINAL — lowest priority
+trapActiveLong  = enableHierarchy and (guardLong == 5)
+trapActiveShort = enableHierarchy and (guardShort == 6)
+
+ctLiteLongFire  = confirmed and allowLongDirection and smAllowLong and enableCTLite and ctLiteLongFiltered and not sniperLong and not (enableHierarchy and trapActiveLong) and not tier2LongFire and isCooledDown(lastCTLiteLongBar) and isNewZone()
+ctLiteShortFire = confirmed and allowShortDirection and smAllowShort and enableCTLite and ctLiteShortFiltered and not sniperShort and not (enableHierarchy and trapActiveShort) and not tier2ShortFire and isCooledDown(lastCTLiteShortBar) and isNewZone()
+
+// RE-ENTRY — arm after valid signal, fire on zone re-tap
+if sniperLong or tier2LongFire
+    reEntryLongArmed := true
+    reEntryLongLevel := fvgBot
+if sniperShort or tier2ShortFire
+    reEntryShortArmed := true
+    reEntryShortLevel := fvgTop
+
+reEntryLongFire  = confirmed and allowLongDirection and smAllowLong and reEntryLongArmed and close <= reEntryLongLevel and close > slLong and isCooledDown(lastReEntryLongBar)
+reEntryShortFire = confirmed and allowShortDirection and smAllowShort and reEntryShortArmed and close >= reEntryShortLevel and close < slShort and isCooledDown(lastReEntryShortBar)
+
+if reEntryLongFire
+    reEntryLongArmed := false
+if reEntryShortFire
+    reEntryShortArmed := false
+
+// ============================================================================
+// SECTION 15E: UPDATE COOLDOWN + STATE MACHINE TRACKERS
+// ============================================================================
+
+// Any long signal fired this bar
+anyLongFired = sniperLong or tier2LongFire or buildLongFire or liteLongFire or ctLiteLongFire or reEntryLongFire
+anyShortFired = sniperShort or tier2ShortFire or buildShortFire or liteShortFire or ctLiteShortFire or reEntryShortFire
+
+// v17.3: STATE MACHINE — activate on signal fire
+if anyLongFired
+    smStateLong  := 1
+    smEntryLong  := entryLong
+    smSLLong     := slLong
+    smTPLong     := tpLong
+    smBarLong    := bar_index
+
+if anyShortFired
+    smStateShort := 1
+    smEntryShort := entryShort
+    smSLShort    := slShort
+    smTPShort    := tpShort
+    smBarShort   := bar_index
+
+// Cooldown trackers
+if sniperLong
+    lastSniperLongBar := bar_index
+    [zh1, zl1, zb1] = markZoneUsed()
+    lastSignalZoneHigh := zh1
+    lastSignalZoneLow  := zl1
+    lastSignalZoneBar  := zb1
+
+if sniperShort
+    lastSniperShortBar := bar_index
+    [zh2, zl2, zb2] = markZoneUsed()
+    lastSignalZoneHigh := zh2
+    lastSignalZoneLow  := zl2
+    lastSignalZoneBar  := zb2
+
+if tier2LongFire
+    lastTier2LongBar := bar_index
+    [zh3, zl3, zb3] = markZoneUsed()
+    lastSignalZoneHigh := zh3
+    lastSignalZoneLow  := zl3
+    lastSignalZoneBar  := zb3
+
+if tier2ShortFire
+    lastTier2ShortBar := bar_index
+    [zh4, zl4, zb4] = markZoneUsed()
+    lastSignalZoneHigh := zh4
+    lastSignalZoneLow  := zl4
+    lastSignalZoneBar  := zb4
+
+if buildLongFire
+    lastBuildLongBar := bar_index
+if buildShortFire
+    lastBuildShortBar := bar_index
+if liteLongFire
+    lastLiteLongBar := bar_index
+if liteShortFire
+    lastLiteShortBar := bar_index
+if ctLiteLongFire
+    lastCTLiteLongBar := bar_index
+if ctLiteShortFire
+    lastCTLiteShortBar := bar_index
+if reEntryLongFire
+    lastReEntryLongBar := bar_index
+if reEntryShortFire
+    lastReEntryShortBar := bar_index
+
+// v17.1 directional setup state updates
+if anyLongFired
+    activeLongSetup := true
+    activeShortSetup := false
+    longInvalidated := false
+    invalidationReasonLong := 0
+if anyShortFired
+    activeShortSetup := true
+    activeLongSetup := false
+    shortInvalidated := false
+    invalidationReasonShort := 0
+
+// Guardian transition memory update
+if confirmed
+    guardianWasWaiting := guardianWaiting
+
+// ============================================================================
+// SECTION 15F: v17.5 CONFLUENCE/HUD SYNCHRONIZATION LAYER
+// ============================================================================
+// Apply caps AFTER all signal/invalidation logic has run, using final state.
+
+// v17.5 FIX 3: Guardian ↔ Confluence sync
+// If Guardian = TRAP (5/6), cap confluence at 2
+guardianIsTrap = guardianCode == 5 or guardianCode == 6
+if guardianIsTrap
+    confluenceScore := math.min(confluenceScore, 2)
+
+// v17.5 FIX 4: Kill Zone visual suppression
+// When outside KZ, cap confluence at 3
+if not kzActive
+    confluenceScore := math.min(confluenceScore, 3)
+
+// v17.5 FIX 5: State Machine → HUD integration
+// When both sides IDLE, force confluence = 0
+bothIdle = smStateLong == 0 and smStateShort == 0
+if bothIdle and not anyLongFired and not anyShortFired
+    confluenceScore := 0
+
+// --- Sniper Progress display value (visual only, internal dtStage unchanged) ---
+// When outside KZ, downgrade display by 1 stage
+// When both SM sides IDLE (and no fresh signal), show "IDLE"
+dtDisplayStage = dtStage
+if not kzActive and dtDisplayStage > 0
+    dtDisplayStage := dtDisplayStage - 1
+
+// --- Guardian display value (visual sync) ---
+// v17.10 FIX 1: Guardian shows WAITING when H4 Bias = NEUTRAL
+// Cannot suggest directional bias without confirmed H4 structure
+guardianDisplayCode = guardianCode
+if h4BiasNeutral
+    guardianDisplayCode := 0  // 0 = WAITING (no directional suggestion)
+else
+    // Guardian SNIPER mode (1/2) requires confluenceScore >= 6 (v17.16: 8-component scale), else downgrade to RETRACE
+    if (guardianCode == 1 or guardianCode == 2) and confluenceScore < 6
+        guardianDisplayCode := guardianCode == 1 ? 3 : 4  // downgrade to RETRACE
+    // Block Guardian SNIPER display when both SM sides IDLE
+    if bothIdle and not anyLongFired and not anyShortFired
+        if guardianDisplayCode == 1 or guardianDisplayCode == 2
+            guardianDisplayCode := guardianDisplayCode == 1 ? 3 : 4
+
+// =========================================================================
+// v17.6 FEATURE 1: ACTION STEP (replaces v17.5 "Readiness" row)
+// =========================================================================
+// 6-state lifecycle: STANDBY → HUNTING → MONITORING → READY → ACTIVE → INVALIDATED
+// Priority order: most critical state wins (checked top-down)
+
+// Helper: Is price in the CORRECT zone for the current H4 bias?
+// Bullish bias wants Discount (buy low), Bearish bias wants Premium (sell high)
+bool inCorrectZoneForBias = (h4Bias == 1 and inDiscountZone) or (h4Bias == -1 and inPremiumZone)
+
+string actionStep = "STANDBY"
+color  actionStepColor = color.gray
+
+// Priority 1: INVALIDATED — hard invalidation fired recently
+if longInvalidated or shortInvalidated
+    actionStep     := "INVALIDATED"
+    actionStepColor := color.red
+
+// Priority 2: ACTIVE — trade being managed by state machine
+else if smStateLong == 1 or smStateShort == 1
+    actionStep     := "ACTIVE"
+    actionStepColor := color.purple
+
+// v17.10 FIX 2: All directional states require confirmed H4 Bias (not NEUTRAL)
+// Priority 3: READY — all confluences met and sniper complete
+else if confluenceScore >= 4 and dtStage >= 5 and not h4BiasNeutral
+    actionStep     := "READY"
+    actionStepColor := color.green
+
+// Priority 4: MONITORING — in correct P&D zone but sniper stage not ready
+else if inCorrectZoneForBias and dtStage < 4 and not h4BiasNeutral
+    actionStep     := "MONITORING"
+    actionStepColor := color.orange
+
+// Priority 5: HUNTING — in KZ, aligned, but price in equilibrium (no zone hit)
+// v17.10: Cannot hunt without directional bias
+else if kzActive and not alignmentConflict and inEquilibriumZone and not h4BiasNeutral
+    actionStep     := "HUNTING"
+    actionStepColor := #2196F3  // Material Blue
+
+// Priority 6: STANDBY — default (outside KZ, or bias conflict, neutral bias, or no conditions)
+else
+    actionStep     := "STANDBY"
+    actionStepColor := color.gray
+
+// =========================================================================
+// v17.6 FEATURE 2: ACTION PLAN (contextual forward-looking guidance)
+// =========================================================================
+// Tells the trader exactly what to do next based on current state.
+
+string actionPlan = ""
+
+if actionStep == "INVALIDATED"
+    actionPlan := "Stand down — setup killed"
+
+else if actionStep == "ACTIVE"
+    actionPlan := "Manage trade per " + entryModeInput + " rules"
+
+// v17.10: Neutral bias gate — prioritized BEFORE directional checks
+else if h4BiasNeutral
+    actionPlan := "Neutral bias — wait for H4 directional confirmation"
+
+else if not kzActive
+    actionPlan := "Standby for next Kill Zone session"
+
+else if h4BiasBullish and not inDiscountZone
+    actionPlan := "Wait for Dip to Discount (Green) for Long"
+
+else if h4BiasBearish and not inPremiumZone
+    actionPlan := "Wait for Retrace to Premium (Red) for Short"
+
+else if inCorrectZoneForBias and dtStage >= 4
+    actionPlan := "Watch for Sniper Momentum/Displacement Trigger"
+
+else if inCorrectZoneForBias and dtStage < 4
+    actionPlan := "In zone — wait for Sniper Progress to advance"
+
+else if alignmentConflict
+    actionPlan := "Bias conflict — wait for alignment resolution"
+
+else
+    actionPlan := "Assess bias and zone alignment"
+
+// ============================================================================
+// SECTION 16: TRADE CONTEXT
+// ============================================================================
+
+var string tradeContext = "NEUTRAL"
+
+if sniperLong or tier2LongFire
+    if mssState >= 1 and mssDir == 1
+        tradeContext := entryModeInput == "MSS-Retrace" ? (mssState == 1 ? "RETRACE WAITING LONG" : "MSS-R ACTIVE LONG") : "CONTINUATION ACTIVE LONG"
+    else
+        tradeContext := "CONTINUATION WATCH LONG"
+else if sniperShort or tier2ShortFire
+    if mssState >= 1 and mssDir == -1
+        tradeContext := entryModeInput == "MSS-Retrace" ? (mssState == 1 ? "RETRACE WAITING SHORT" : "MSS-R ACTIVE SHORT") : "CONTINUATION ACTIVE SHORT"
+    else
+        tradeContext := "CONTINUATION WATCH SHORT"
+else if momentumScore >= 2
+    tradeContext := "MOMENTUM WEAKENING " + str.tostring(momentumScore) + "/3"
+else if alignmentConflict
+    tradeContext := "CONFLICT"
+else if ctLiteLongFire or ctLiteShortFire
+    tradeContext := "REVERSAL ACTIVE"
+else
+    tradeContext := "NEUTRAL"
+
+// ============================================================================
+// SECTION 17: VISUAL LABELS (v17.5 — DOUBLE-GATED STATE MACHINE + CT FILTER)
+// ============================================================================
+
+// v17.1 FIX 5: Track whether a primary label was placed this bar
+anySignalThisBar = sniperLong or sniperShort or tier2LongFire or tier2ShortFire or buildLongFire or buildShortFire or liteLongFire or liteShortFire or ctLiteLongFire or ctLiteShortFire
+
+// v17.5: BELT-AND-SUSPENDERS ENFORCEMENT
+// Even though signal booleans already include smAllowLong/smAllowShort checks,
+// we add a SECOND gate directly before every label.new() call.
+// This prevents any edge case where Pine Script execution order could allow
+// a label when state machine is ACTIVE.
+//
+// Additionally, counter-trend labels are double-checked against the 5-point gate.
+
+// v17.5: Pre-computed label guards (checked BEFORE every label.new)
+labelGuardLong  = smStateLong == 0   // ABSOLUTE: no long labels if state ACTIVE
+labelGuardShort = smStateShort == 0  // ABSOLUTE: no short labels if state ACTIVE
+// Counter-trend label guard: if counter-trend, must pass 5-point check
+ctLabelGuardLong  = not isCounterTrendLong or ct5PassLong
+ctLabelGuardShort = not isCounterTrendShort or ct5PassShort
+
+// --- Tier 1 (Sniper) labels --- DOUBLE-GATED
+if sniperLong and labelGuardLong and ctLabelGuardLong
+    label.new(bar_index, low, sniperLabelLong + " " + str.tostring(entryLong, "#.#####") + "\nPOI:" + str.tostring(poiScore) + "/5", style=label.style_label_up, color=color.new(color.green, 10), textcolor=color.white, size=size.small)
+
+if sniperShort and labelGuardShort and ctLabelGuardShort
+    label.new(bar_index, high, sniperLabelShort + " " + str.tostring(entryShort, "#.#####") + "\nPOI:" + str.tostring(poiScore) + "/5", style=label.style_label_down, color=color.new(color.red, 10), textcolor=color.white, size=size.small)
+
+// --- Tier 2 labels --- DOUBLE-GATED
+if tier2LongFire and labelGuardLong and ctLabelGuardLong
+    label.new(bar_index, low, "T2 LONG\n" + str.tostring(entryLong, "#.#####") + " POI:" + str.tostring(poiScore), style=label.style_label_up, color=color.new(color.teal, 20), textcolor=color.white, size=size.tiny)
+
+if tier2ShortFire and labelGuardShort and ctLabelGuardShort
+    label.new(bar_index, high, "T2 SHORT\n" + str.tostring(entryShort, "#.#####") + " POI:" + str.tostring(poiScore), style=label.style_label_down, color=color.new(color.maroon, 20), textcolor=color.white, size=size.tiny)
+
+// --- Building labels --- DOUBLE-GATED
+if buildLongFire and labelGuardLong and ctLabelGuardLong
+    label.new(bar_index, low, "BUILD LONG", style=label.style_label_up, color=color.new(color.blue, 30), textcolor=color.white, size=size.tiny)
+
+if buildShortFire and labelGuardShort and ctLabelGuardShort
+    label.new(bar_index, high, "BUILD SHORT", style=label.style_label_down, color=color.new(color.purple, 30), textcolor=color.white, size=size.tiny)
+
+// --- Lite labels --- DOUBLE-GATED
+if liteLongFire and labelGuardLong and ctLabelGuardLong
+    label.new(bar_index, low, "LITE ↑", style=label.style_label_up, color=color.new(color.lime, 40), textcolor=color.black, size=size.tiny)
+
+if liteShortFire and labelGuardShort and ctLabelGuardShort
+    label.new(bar_index, high, "LITE ↓", style=label.style_label_down, color=color.new(color.orange, 40), textcolor=color.black, size=size.tiny)
+
+// --- CT Lite labels --- DOUBLE-GATED (always counter-trend, always needs 5-point)
+if ctLiteLongFire and labelGuardLong and ct5PassLong
+    label.new(bar_index, low, "CT LITE ↑", style=label.style_label_up, color=color.new(color.yellow, 20), textcolor=color.black, size=size.tiny)
+
+if ctLiteShortFire and labelGuardShort and ct5PassShort
+    label.new(bar_index, high, "CT LITE ↓", style=label.style_label_down, color=color.new(color.yellow, 20), textcolor=color.black, size=size.tiny)
+
+// --- v17.3 invalidation markers --- show reason and reset state
+longReasonText = invalidationReasonLong == 1 ? "Structure Flip" : invalidationReasonLong == 2 ? "Alignment Shift" : invalidationReasonLong == 3 ? "Guardian WAITING" : invalidationReasonLong == 4 ? "POI Drop" : invalidationReasonLong == 5 ? "P&D Shift" : invalidationReasonLong == 6 ? "Sweep Reversal" : "Hard Rule"
+shortReasonText = invalidationReasonShort == 1 ? "Structure Flip" : invalidationReasonShort == 2 ? "Alignment Shift" : invalidationReasonShort == 3 ? "Guardian WAITING" : invalidationReasonShort == 4 ? "POI Drop" : invalidationReasonShort == 5 ? "P&D Shift" : invalidationReasonShort == 6 ? "Sweep Reversal" : "Hard Rule"
+
+// v17.5 FIX 6: Invalidation label deduplication — only ONE "X" per bar per direction
+if longKilledThisBar and bar_index != lastInvalBarLong
+    label.new(bar_index, high + atrValue * 0.2, "✗ LONG\n" + longReasonText, style=label.style_label_down, color=color.new(color.red, 0), textcolor=color.white, size=size.tiny)
+    lastInvalBarLong := bar_index
+if shortKilledThisBar and bar_index != lastInvalBarShort
+    label.new(bar_index, low - atrValue * 0.2, "✗ SHORT\n" + shortReasonText, style=label.style_label_up, color=color.new(color.green, 0), textcolor=color.white, size=size.tiny)
+    lastInvalBarShort := bar_index
+
+// --- v17.1 FIX 5: Secondary labels only when NO signal is active nearby ---
+showSecondary = showSecondaryInfo and not anySignalThisBar
+
+if showFibWarnings and showSecondary and h4FibLevel > 78.6 and structureDir == 1
+    label.new(bar_index, high, "⚠ Fib " + str.tostring(h4FibLevel, "#.#") + "%", style=label.style_label_down, color=color.new(color.orange, 50), textcolor=color.orange, size=size.tiny)
+
+if showFibWarnings and showSecondary and h4FibLevel < 23.6 and structureDir == -1
+    label.new(bar_index, low, "⚠ Fib " + str.tostring(h4FibLevel, "#.#") + "%", style=label.style_label_up, color=color.new(color.orange, 50), textcolor=color.orange, size=size.tiny)
+
+if showPOILabels and showSecondary and poiScore >= 4
+    label.new(bar_index, low - atrValue * 0.3, "POI:" + str.tostring(poiScore), style=label.style_none, textcolor=color.gray, size=size.tiny)
+
+// ============================================================================
+// SECTION 18: STRUCTURE VISUALIZATIONS
+// ============================================================================
+
+if showChoch and chochUp
+    line.new(lastSwLowBar, lastSwingHigh, bar_index, lastSwingHigh, color=color.green, style=line.style_dashed, width=1)
+
+if showChoch and chochDn
+    line.new(lastSwHighBar, lastSwingLow, bar_index, lastSwingLow, color=color.red, style=line.style_dashed, width=1)
+
+if showBOS and bosUp
+    line.new(lastSwLowBar, lastSwingHigh, bar_index, lastSwingHigh, color=color.green, style=line.style_solid, width=2)
+
+if showBOS and bosDn
+    line.new(lastSwHighBar, lastSwingLow, bar_index, lastSwingLow, color=color.red, style=line.style_solid, width=2)
+
+// ============================================================================
+// SECTION 19: ZONE VISUALIZATION (v17.5 — INSTITUTIONAL S&D ZONES)
+// ============================================================================
+
+// --- H4 Premium/Discount extending zones (v17.6 — BACKGROUND LAYER, max transparency) ---
+// v17.6 FEATURE 3: P&D zones rendered FIRST for background layering.
+// Uses extend=extend.right so zones always extend to current view.
+// Increased transparency (92%) ensures candle bodies/wicks are clearly visible.
+// Red = Premium zone (upper range), Green = Discount zone (lower range).
+var box   pdPremiumBox  = na
+var box   pdDiscountBox = na
+var line  pdEqLine      = na
+var label pdEqLabel     = na
+var line  pdPremThreshLine = na
+var line  pdDiscThreshLine = na
+
+if showH4Zones and barstate.islast
+    // Delete previous boxes/lines to prevent overlapping (hatching)
+    if not na(pdPremiumBox)
+        box.delete(pdPremiumBox)
+    if not na(pdDiscountBox)
+        box.delete(pdDiscountBox)
+    if not na(pdEqLine)
+        line.delete(pdEqLine)
+    if not na(pdEqLabel)
+        label.delete(pdEqLabel)
+    if not na(pdPremThreshLine)
+        line.delete(pdPremThreshLine)
+    if not na(pdDiscThreshLine)
+        line.delete(pdDiscThreshLine)
+    // v17.6: BACKGROUND LAYER — drawn FIRST, highest transparency, wide right extension
+    // These render behind S&D zones and candles for clean price action visibility
+    // box.new uses large right offset (+500 bars) to simulate extend-right behavior
+    pdPremiumBox  := box.new(bar_index - 50, h4PremiumTop, bar_index + 500, h4PremiumBottom, bgcolor=color.new(color.red, 85), border_color=color.new(color.red, 70), border_width=1)
+    pdDiscountBox := box.new(bar_index - 50, h4DiscountTop, bar_index + 500, h4DiscountBottom, bgcolor=color.new(color.green, 85), border_color=color.new(color.green, 70), border_width=1)
+    // v17.19: Equilibrium line — bold solid white, tracked label (fixes label accumulation)
+    if showEquilibriumLine
+        pdEqLine  := line.new(bar_index - 50, h4Eq, bar_index + 50, h4Eq, color=color.white, style=line.style_solid, width=4, extend=extend.right)
+        pdEqLabel := label.new(bar_index + 55, h4Eq, "  EQ  ", style=label.style_label_left, textcolor=color.white, color=color.new(color.black, 20), size=size.normal)
+    // v17.11.1: Premium/Discount threshold boundary lines (subtle dashed)
+    pdPremThreshLine := line.new(bar_index - 50, h4PremiumBottom, bar_index + 50, h4PremiumBottom, color=color.new(color.red, 60), style=line.style_dashed, width=1, extend=extend.right)
+    pdDiscThreshLine := line.new(bar_index - 50, h4DiscountTop, bar_index + 50, h4DiscountTop, color=color.new(color.green, 60), style=line.style_dashed, width=1, extend=extend.right)
+
+// ============================================================================
+// v17.5 FIX 3: INSTITUTIONAL SUPPLY & DEMAND ZONES
+// ============================================================================
+// Detects significant reversal zones from swing structure:
+// - Demand: Area where price reversed UP after making a swing low with displacement
+// - Supply: Area where price reversed DOWN after making a swing high with displacement
+//
+// Zones are drawn as labeled boxes matching user's design:
+// - Demand: Green fill, Purple border, "Demand" text inside
+// - Supply: Orange fill, Purple border, "Supply" text inside
+
+// --- Demand zone tracking (bullish reversal area) ---
+var float demandTop    = na
+var float demandBot    = na
+var int   demandBar    = 0
+var bool  demandActive = false
+var box   demandBox    = na
+
+// --- Supply zone tracking (bearish reversal area) ---
+var float supplyTop    = na
+var float supplyBot    = na
+var int   supplyBar    = 0
+var bool  supplyActive = false
+var box   supplyBox    = na
+
+// Demand zone: Detect when price sweeps a swing low and reverses up with displacement
+// This creates a "demand" area at the low region where buyers stepped in
+if not na(swLow) and displacement > 0.5
+    demandBot    := swLow
+    demandTop    := swLow + atrValue * 0.5
+    demandBar    := bar_index - swingLen
+    demandActive := true
+
+// Supply zone: Detect when price sweeps a swing high and reverses down with displacement
+if not na(swHigh) and displacement > 0.5
+    supplyTop    := swHigh
+    supplyBot    := swHigh - atrValue * 0.5
+    supplyBar    := bar_index - swingLen
+    supplyActive := true
+
+// Invalidate demand if price closes significantly below
+if demandActive and close < demandBot - atrValue * 0.3
+    demandActive := false
+
+// Invalidate supply if price closes significantly above
+if supplyActive and close > supplyTop + atrValue * 0.3
+    supplyActive := false
+
+// Draw/update Supply & Demand zone boxes
+if barstate.islast
+    // Clean up previous boxes
+    if not na(demandBox)
+        box.delete(demandBox)
+    if not na(supplyBox)
+        box.delete(supplyBox)
+
+    // Draw Demand zone (green fill, purple border, "Demand" label)
+    if demandActive and not na(demandTop) and not na(demandBot)
+        demandBox := box.new(demandBar, demandTop, bar_index + 10, demandBot, bgcolor=color.new(color.green, 55), border_color=color.new(color.purple, 20), border_width=2, text="⬤ DEMAND", text_size=size.large, text_color=color.new(color.gray, 20), text_halign=text.align_center, text_valign=text.align_center)
+
+    // Draw Supply zone (orange fill, purple border, "Supply" label)
+    if supplyActive and not na(supplyTop) and not na(supplyBot)
+        supplyBox := box.new(supplyBar, supplyTop, bar_index + 10, supplyBot, bgcolor=color.new(color.orange, 55), border_color=color.new(color.purple, 20), border_width=2, text="⬤ SUPPLY", text_size=size.large, text_color=color.new(color.gray, 20), text_halign=text.align_center, text_valign=text.align_center)
+
+// --- FVG micro-zones REMOVED (v17.5 Final) ---
+// REMOVED: These created overlapping boxes on candles every bar while FVG was active,
+// producing the hatched overlay effect on individual candles.
+// FVG detection logic remains 100% active for POI scoring, signal gating, and alerts.
+
+// --- OB micro-zones REMOVED (v17.5 Final) ---
+// REMOVED: These created overlapping boxes on candles every bar while price was in OB,
+// producing the hatched overlay effect on individual candles.
+// OB detection logic remains 100% active for POI scoring, signal gating, and alerts.
+
+// ============================================================================
+// SECTION 20: PLOTS (v17.5 — 59/64, CONFLUENCE SCORE REPLACES SIGNAL COUNTER)
+// ============================================================================
+
+// ============================================================================
+// v17.12 FIX: Consolidated Webhook Data Plots (Reduced from 38 to 18)
+// These plots use display=display.none and are referenced in alertconditions.
+// Removed: Asian High/Low/Pips, AMD Phase, IPM flags, CT Lite flags, 
+// Re-Entry prices (shown visually), Tier3 metrics, MSS POI levels, 
+// Entry/TP Mode flags (config info, not needed in webhook).
+// ============================================================================
+
+// Core Entry/SL/TP Data (6 plots — essential for all signals)
+plot(entryLong, "Alert Entry Long", display=display.none)                          // plot 0
+plot(slLong, "Alert SL Long", display=display.none)                                // plot 1
+plot(tpLong, "Alert TP Long", display=display.none)                                // plot 2
+plot(entryShort, "Alert Entry Short", display=display.none)                        // plot 3
+plot(slShort, "Alert SL Short", display=display.none)                              // plot 4
+plot(tpShort, "Alert TP Short", display=display.none)                              // plot 5
+
+// Quality & Progression Metrics (4 plots)
+plot(qualityScore, "Alert Quality Score", display=display.none)                    // plot 6
+plot(poiScore, "Alert POI Score", display=display.none)                            // plot 7
+plot(confluenceScore, "Alert Confluence Score", display=display.none)              // plot 8
+plot(dtStage, "Alert DT State", display=display.none)                              // plot 9
+
+// H4 Structure & Zone Position (4 plots)
+plot(h4Bias, "Alert H4 Bias", display=display.none)                                // plot 10
+plot(pdZone, "Alert P&D Zone", display=display.none)                               // plot 11
+plot(kzCode, "Alert Kill Zone", display=display.none)                              // plot 12
+plot(guardianCode, "Alert Guardian Code", display=display.none)                    // plot 13
+
+// Technical Indicators (4 plots)
+plot(displacement, "Alert Displacement", display=display.none)                     // plot 14
+plot(momentumScore, "Alert Momentum Score", display=display.none)                  // plot 15
+plot(h4FibLevel, "Alert H4 Fib Level", display=display.none)                       // plot 16
+plot(structureStateCode, "Alert Structure State", display=display.none)            // plot 17
+
+// Removed redundant plots (previously 19-37):
+// - FVG Filter, OB Refinement: Can be inferred from poiScore
+// - Asian High/Low/Pips: Not critical for real-time signals
+// - MSS POI Top/Bot: Internal state, not essential for webhook
+// - Tier3 Confluence/PoolMask: Redundant with poiScore
+// - Entry/TP Mode Flags: Configuration (static), not dynamic data
+// - Momentum Flags: Can be derived from momentumScore
+// - Re-Entry prices: Visualized separately via plotshape
+// - AMD Phase, IPM Long/Short, CT Lite flags: Secondary alerts
+
+// v17.14 FIX: REMOVED equilibrium plot() — this drew yellow circles on EVERY bar across
+// the entire chart history, causing the equilibrium to visually extend far to the left
+// of the P&D zone boxes (which only span bar_index-50 to bar_index+500).
+// The line.new-based equilibrium (yellow dotted, drawn in the P&D zone section) is the
+// sole equilibrium visual now, and its x1 matches the zone boxes' x1 (bar_index - 50).
+// Removing this also frees 1 plot slot (helps with plot budget).
+// OLD: plot(showEquilibriumLine and showH4Zones ? h4Eq : na, "",
+//     color=color.new(color.yellow, 40), linewidth=2,
+//     style=plot.style_circles, display=display.pane)                                // plot 39
+
+// v17.1 FIX 5: Consolidated signal markers — one plotshape per direction
+anySigLong  = sniperLong or tier2LongFire or buildLongFire or liteLongFire or ctLiteLongFire
+anySigShort = sniperShort or tier2ShortFire or buildShortFire or liteShortFire or ctLiteShortFire
+sigColorLong  = sniperLong ? color.green : tier2LongFire ? color.teal : buildLongFire ? color.blue : liteLongFire ? color.lime : color.yellow
+sigColorShort = sniperShort ? color.red : tier2ShortFire ? color.maroon : buildShortFire ? color.purple : liteShortFire ? color.orange : color.yellow
+
+plotshape(anySigLong, "Signal Long", shape.circle, location.belowbar, sigColorLong, size=size.small)   // plot 43
+plotshape(anySigShort, "Signal Short", shape.circle, location.abovebar, sigColorShort, size=size.small) // plot 44
+
+// Re-Entry visual
+plotshape(reEntryLongFire, "Re-Entry Long", shape.flag, location.belowbar, color.teal, size=size.tiny)  // plot 47
+plotshape(reEntryShortFire, "Re-Entry Short", shape.flag, location.abovebar, color.maroon, size=size.tiny) // plot 48
+
+// ============================================================================
+// v17.16 SECTION: SIGNAL PROOF-OF-LIFE
+// ============================================================================
+// Tracks signals per session and provides a visual heartbeat
+
+// --- Session Signal Counter ---
+var int sessionSignalCount = 0
+var int lastSessionDay = -1
+currentDay = dayofweek(time)
+if currentDay != lastSessionDay
+    sessionSignalCount := 0
+    lastSessionDay := currentDay
+
+// Count any signal fired this bar
+if anySigLong or anySigShort or reEntryLongFire or reEntryShortFire
+    sessionSignalCount += 1
+
+// --- Heartbeat: system is active when KZ is active and confluence > 0 ---
+bool systemActive = kzActive and confluenceScore > 0 and not bothIdle
+
+// --- Visual heartbeat plotshape (small dot below price when system scanning) ---
+plotshape(showProofOfLife and systemActive and barstate.islast ? true : false, "Heartbeat", shape.diamond, location.bottom, color.new(color.lime, 30), size=size.tiny)  // plot: heartbeat
+
+// --- Signal counter as hidden plot for reference ---
+plot(sessionSignalCount, "Session Signal Count", display=display.none)  // plot: session counter
+
+
+// Invalidation marker
+plot(h4Invalidated and showInvalidation ? close : na, "H4 Invalidated", color.new(color.gray, 50), style=plot.style_cross) // plot 51
+
+// Kill zone background
+bgcolor(kzActive and enableKZ ? color.new(color.gray, 96) : na) // plot 53
+
+// Conflict background
+bgcolor(alignmentConflict ? color.new(color.red, 97) : na) // plot 54
+
+// v17.5: Equilibrium plot REMOVED — now uses line.new only (no plot cost, no tooltip)
+// This eliminates the "SMC PD v17:H4 Equilibrium" label from the chart data window
+
+cooldownActiveLong  = not isCooledDown(lastSniperLongBar) or not isCooledDown(lastTier2LongBar)
+cooldownActiveShort = not isCooledDown(lastSniperShortBar) or not isCooledDown(lastTier2ShortBar)
+
+// v17.1: Hierarchy suppression indicator
+plot(enableHierarchy ? 1 : 0, "Hierarchy Active", display=display.none) // plot 55
+plot(cooldownWindow, "Cooldown Window", display=display.none)           // plot 56
+
+// TOTAL after v17.16: 33/64 outputs ✓ SAFE MARGIN +31
+// 22 plot() + 5 plotshape() + 2 bgcolor() + 4 alertcondition() = 33 total components
+// v17.16 additions: +1 plotshape (heartbeat), +1 plot (session signal counter)
+// (removed 1 plot: equilibrium circles plot that caused left-extension visual bug)
+// S&D zones use box.new (no plot budget cost). Equilibrium line uses line.new (no cost).
+// v17.6 Action Step + Action Plan use table.cell only (no plot cost).
+
+// ============================================================================
+// SECTION 21: v17.13 ALERT CONSOLIDATION & HARDENING SYSTEM
+// ============================================================================
+
+// ---- Setup ID Generation (deterministic, human-readable) ----
+// v17.14: Stable setup_id uses DIRECTION + ZONE only (no confluence/stage).
+// This prevents the setup_id from changing every bar as scores fluctuate.
+// Example: "BULL_DZ" = Bullish bias, Discount Zone
+f_generate_setup_id() =>
+    string biasTag = h4Bias == 1 ? "BULL" : h4Bias == -1 ? "BEAR" : "NEUT"
+    string zoneTag = inDiscountZone ? "DZ" : inPremiumZone ? "PZ" : "EQ"
+    biasTag + "_" + zoneTag
+
+// v17.14: Detailed setup_id for display/logging (includes scores)
+f_generate_display_id() =>
+    string biasTag = h4Bias == 1 ? "BULL" : h4Bias == -1 ? "BEAR" : "NEUT"
+    string zoneTag = inDiscountZone ? "DZ" : inPremiumZone ? "PZ" : "EQ"
+    string cfTag   = "CF" + str.tostring(confluenceScore)
+    string stTag   = "S" + str.tostring(dtStage)
+    biasTag + "_" + zoneTag + "_" + cfTag + "_" + stTag
+
+// ---- Deduplication Tracking Variables ----
+var string setup_id_last_sniper_long  = ""
+var int    bar_last_sniper_long       = 0
+var string setup_id_last_sniper_short = ""
+var int    bar_last_sniper_short      = 0
+var string setup_id_last_retrace_long = ""
+var int    bar_last_retrace_long      = 0
+var string setup_id_last_retrace_short= ""
+var int    bar_last_retrace_short     = 0
+
+var string last_alert_type     = ""
+var int    last_alert_time     = 0
+var string last_alert_setup_id = ""
+
+// ---- Cooldown Check Function (v17.14 HARDENED) ----
+// Returns true ONLY if enough bars have elapsed AND the setup has changed.
+// v17.13 used OR (setup change bypassed cooldown) — caused spam on history.
+// v17.14 uses AND: cooldown must expire AND setup must differ from last fire.
+f_alert_ready(int last_bar, string last_setup_id, string current_setup_id, int cooldown_min) =>
+    float tf_minutes = timeframe.in_seconds() / 60.0
+    int cooldown_bars = tf_minutes > 0 ? math.ceil(cooldown_min / tf_minutes) : 1
+    int bars_elapsed = bar_index - last_bar
+    bool cooldown_ok = bars_elapsed >= cooldown_bars
+    bool setup_changed = current_setup_id != last_setup_id
+    cooldown_ok and setup_changed
+
+// ---- Generate Current Setup IDs ----
+string current_setup_id  = f_generate_setup_id()
+string current_display_id = f_generate_display_id()
+
+// ---- Firing Condition Booleans ----
+
+// --- SNIPER LONG ---
+sniper_long_action_ready    = (actionStep == "READY")
+sniper_long_confluence_ok   = (confluenceScore >= confluence_threshold_sniper)
+sniper_long_stage_ok        = (dtStage >= sniper_stage_threshold)
+sniper_long_guardian_ok     = (guardLong != 5 and guardLong != 6)  // Not TRAP BUY/SELL
+sniper_long_state_ok        = (smStateLong == 0)  // IDLE — not BLOCKED
+sniper_long_not_duplicate   = f_alert_ready(bar_last_sniper_long, setup_id_last_sniper_long, current_setup_id, alert_cooldown_minutes)
+
+fire_sniper_long = sniper_long_action_ready and sniper_long_confluence_ok and sniper_long_stage_ok and sniper_long_guardian_ok and sniper_long_state_ok and sniper_long_not_duplicate and barstate.isconfirmed
+
+// --- SNIPER SHORT ---
+sniper_short_action_ready   = (actionStep == "READY")
+sniper_short_confluence_ok  = (confluenceScore >= confluence_threshold_sniper)
+sniper_short_stage_ok       = (dtStage >= sniper_stage_threshold)
+sniper_short_guardian_ok    = (guardShort != 5 and guardShort != 6)  // Not TRAP BUY/SELL
+sniper_short_state_ok       = (smStateShort == 0)  // IDLE — not BLOCKED
+sniper_short_not_duplicate  = f_alert_ready(bar_last_sniper_short, setup_id_last_sniper_short, current_setup_id, alert_cooldown_minutes)
+
+fire_sniper_short = sniper_short_action_ready and sniper_short_confluence_ok and sniper_short_stage_ok and sniper_short_guardian_ok and sniper_short_state_ok and sniper_short_not_duplicate and barstate.isconfirmed
+
+// --- RETRACE LONG ---
+retrace_long_in_zone        = inDiscountZone  // P&D zone == DZ
+retrace_long_mode_ok        = (guardLong == 3 or guardLong == 1 or actionStep == "MONITORING")  // Guardian allows retrace/sniper buy, OR monitoring
+retrace_long_confluence_ok  = (confluenceScore >= retrace_confluence_threshold)
+retrace_long_not_duplicate  = f_alert_ready(bar_last_retrace_long, setup_id_last_retrace_long, current_setup_id, alert_cooldown_minutes)
+
+fire_retrace_long = retrace_long_in_zone and retrace_long_mode_ok and retrace_long_confluence_ok and retrace_long_not_duplicate and barstate.isconfirmed
+
+// --- RETRACE SHORT ---
+retrace_short_in_zone       = inPremiumZone  // P&D zone == PZ
+retrace_short_mode_ok       = (guardShort == 4 or guardShort == 2 or actionStep == "MONITORING")  // Guardian allows retrace/sniper sell, OR monitoring
+retrace_short_confluence_ok = (confluenceScore >= retrace_confluence_threshold)
+retrace_short_not_duplicate = f_alert_ready(bar_last_retrace_short, setup_id_last_retrace_short, current_setup_id, alert_cooldown_minutes)
+
+fire_retrace_short = retrace_short_in_zone and retrace_short_mode_ok and retrace_short_confluence_ok and retrace_short_not_duplicate and barstate.isconfirmed
+
+// ---- Update Tracking Variables When Alerts Fire ----
+if fire_sniper_long
+    setup_id_last_sniper_long := current_setup_id
+    bar_last_sniper_long      := bar_index
+    last_alert_type           := "SNIPER LONG"
+    last_alert_time           := time
+    last_alert_setup_id       := current_display_id  // v17.14: display_id for HUD
+
+if fire_sniper_short
+    setup_id_last_sniper_short := current_setup_id
+    bar_last_sniper_short      := bar_index
+    last_alert_type            := "SNIPER SHORT"
+    last_alert_time            := time
+    last_alert_setup_id        := current_display_id  // v17.14: display_id for HUD
+
+if fire_retrace_long
+    setup_id_last_retrace_long := current_setup_id
+    bar_last_retrace_long      := bar_index
+    last_alert_type            := "RETRACE LONG"
+    last_alert_time            := time
+    last_alert_setup_id        := current_display_id  // v17.14: display_id for HUD
+
+if fire_retrace_short
+    setup_id_last_retrace_short := current_setup_id
+    bar_last_retrace_short      := bar_index
+    last_alert_type             := "RETRACE SHORT"
+    last_alert_time             := time
+    last_alert_setup_id         := current_display_id  // v17.14: display_id for HUD
+
+// ---- P1 Debug Mode: Single reused label for most recent alert (v17.14) ----
+// v17.14 FIX: Uses var+delete pattern — only ONE label exists at any time.
+// Only renders on the last confirmed bar to prevent historical clutter.
+var label debug_alert_label = na
+
+if enable_alert_debug and barstate.islastconfirmedhistory
+    bool any_fire = fire_sniper_long or fire_sniper_short or fire_retrace_long or fire_retrace_short
+    if any_fire
+        // Delete previous label
+        if not na(debug_alert_label)
+            label.delete(debug_alert_label)
+        // Build label text
+        string lbl_type = fire_sniper_long ? "🎯 SNIPER LONG" : fire_sniper_short ? "🎯 SNIPER SHORT" : fire_retrace_long ? "🔄 RETRACE LONG" : "🔄 RETRACE SHORT"
+        string lbl_entry = (fire_sniper_long or fire_retrace_long) ? str.tostring(entryLong, "#.#####") : str.tostring(entryShort, "#.#####")
+        string lbl_sl = (fire_sniper_long or fire_retrace_long) ? str.tostring(slLong, "#.#####") : str.tostring(slShort, "#.#####")
+        string lbl_tp = (fire_sniper_long or fire_retrace_long) ? str.tostring(tpLong, "#.#####") : str.tostring(tpShort, "#.#####")
+        string lbl_text = lbl_type + "\n" + current_display_id + "\nE:" + lbl_entry + " SL:" + lbl_sl + " TP:" + lbl_tp + " CF:" + str.tostring(confluenceScore)
+        color lbl_color = fire_sniper_long ? color.new(color.green, 30) : fire_sniper_short ? color.new(color.red, 30) : fire_retrace_long ? color.new(color.teal, 30) : color.new(color.orange, 30)
+        bool is_long = fire_sniper_long or fire_retrace_long
+        debug_alert_label := label.new(bar_index, is_long ? high : low, lbl_text, style=is_long ? label.style_label_down : label.style_label_up, color=lbl_color, textcolor=color.white, size=size.tiny)
+
+// ---- P1 Debug Mode: Alert History Table (v17.14) ----
+// Table accumulates alerts in var arrays (persists across bars).
+// Table rendering only on last bar to avoid performance issues.
+var table debug_table = na
+var array<string> debug_types   = array.new_string(0)
+var array<string> debug_times   = array.new_string(0)
+var array<string> debug_ids     = array.new_string(0)
+var array<string> debug_entries = array.new_string(0)
+var array<string> debug_sls     = array.new_string(0)
+var array<string> debug_tps     = array.new_string(0)
+var array<string> debug_cfs     = array.new_string(0)
+
+if enable_alert_debug
+    // Add new alert data to front of arrays when any alert fires
+    if fire_sniper_long or fire_sniper_short or fire_retrace_long or fire_retrace_short
+        string dbg_type  = fire_sniper_long ? "SNP L" : fire_sniper_short ? "SNP S" : fire_retrace_long ? "RET L" : "RET S"
+        string dbg_entry = fire_sniper_long or fire_retrace_long ? str.tostring(entryLong, "#.#####") : str.tostring(entryShort, "#.#####")
+        string dbg_sl    = fire_sniper_long or fire_retrace_long ? str.tostring(slLong, "#.#####") : str.tostring(slShort, "#.#####")
+        string dbg_tp    = fire_sniper_long or fire_retrace_long ? str.tostring(tpLong, "#.#####") : str.tostring(tpShort, "#.#####")
+        string dbg_cf    = str.tostring(confluenceScore)
+        string dbg_time  = str.format_time(time, "HH:mm", syminfo.timezone)
+        
+        array.unshift(debug_types, dbg_type)
+        array.unshift(debug_times, dbg_time)
+        array.unshift(debug_ids, current_display_id)
+        array.unshift(debug_entries, dbg_entry)
+        array.unshift(debug_sls, dbg_sl)
+        array.unshift(debug_tps, dbg_tp)
+        array.unshift(debug_cfs, dbg_cf)
+        
+        // Trim arrays to max rows
+        while array.size(debug_types) > alert_debug_table_rows
+            array.pop(debug_types)
+            array.pop(debug_times)
+            array.pop(debug_ids)
+            array.pop(debug_entries)
+            array.pop(debug_sls)
+            array.pop(debug_tps)
+            array.pop(debug_cfs)
+
+    // Build/update debug table — only on last bar (v17.14 performance fix)
+    if barstate.islast
+        if na(debug_table)
+            debug_table := table.new(position.top_left, 7, alert_debug_table_rows + 1, bgcolor=color.new(color.black, 20), frame_color=color.gray, frame_width=1, border_color=color.new(color.gray, 60), border_width=1)
+        
+        // Headers
+        table.cell(debug_table, 0, 0, "Type",  text_color=color.yellow, text_size=size.tiny)
+        table.cell(debug_table, 1, 0, "Time",  text_color=color.yellow, text_size=size.tiny)
+        table.cell(debug_table, 2, 0, "ID",    text_color=color.yellow, text_size=size.tiny)
+        table.cell(debug_table, 3, 0, "Entry", text_color=color.yellow, text_size=size.tiny)
+        table.cell(debug_table, 4, 0, "SL",    text_color=color.yellow, text_size=size.tiny)
+        table.cell(debug_table, 5, 0, "TP",    text_color=color.yellow, text_size=size.tiny)
+        table.cell(debug_table, 6, 0, "CF",    text_color=color.yellow, text_size=size.tiny)
+        
+        // Data rows — guard against empty arrays (RE10045 fix from v17.13)
+        int dbg_rows = math.min(array.size(debug_types), alert_debug_table_rows)
+        if dbg_rows > 0
+            for i = 0 to dbg_rows - 1
+                color row_color = str.contains(array.get(debug_types, i), "L") ? color.green : color.red
+                table.cell(debug_table, 0, i + 1, array.get(debug_types, i),   text_color=row_color,    text_size=size.tiny)
+                table.cell(debug_table, 1, i + 1, array.get(debug_times, i),   text_color=color.white,  text_size=size.tiny)
+                table.cell(debug_table, 2, i + 1, array.get(debug_ids, i),     text_color=color.aqua,   text_size=size.tiny)
+                table.cell(debug_table, 3, i + 1, array.get(debug_entries, i), text_color=color.white,  text_size=size.tiny)
+                table.cell(debug_table, 4, i + 1, array.get(debug_sls, i),     text_color=color.orange, text_size=size.tiny)
+                table.cell(debug_table, 5, i + 1, array.get(debug_tps, i),     text_color=color.green,  text_size=size.tiny)
+                table.cell(debug_table, 6, i + 1, array.get(debug_cfs, i),     text_color=color.yellow, text_size=size.tiny)
+
+// ---- EXACTLY 4 alertcondition() Statements (v17.16) ----
+// Webhook payloads use correct {{plot_X}} indices per v17.12.3 mapping:
+//   plot_0: entryLong    plot_6:  qualityScore    plot_12: kzCode
+//   plot_1: slLong       plot_7:  poiScore        plot_13: guardianCode
+//   plot_2: tpLong       plot_8:  confluenceScore  plot_14: displacement
+//   plot_3: entryShort   plot_9:  dtStage          plot_15: momentumScore
+//   plot_4: slShort      plot_10: h4Bias           plot_16: h4FibLevel
+//   plot_5: tpShort      plot_11: pdZone           plot_17: structureStateCode
+
+// 1. Sniper Long
+alertcondition(fire_sniper_long, title="Sniper Long", message='{"type":"sniper_long","setup_id":"dynamic","symbol":"{{ticker}}","entry_price":{{plot_0}},"stop_loss":{{plot_1}},"take_profit":{{plot_2}},"quality":{{plot_6}},"poi":{{plot_7}},"confluence":{{plot_8}},"dt_stage":{{plot_9}},"h4_bias":"{{plot_10}}","p_d_zone":"{{plot_11}}","kill_zone":"{{plot_12}}","guardian":"{{plot_13}}","timestamp":"{{timenow}}","version":"v17.19"}')
+
+// 2. Sniper Short
+alertcondition(fire_sniper_short, title="Sniper Short", message='{"type":"sniper_short","setup_id":"dynamic","symbol":"{{ticker}}","entry_price":{{plot_3}},"stop_loss":{{plot_4}},"take_profit":{{plot_5}},"quality":{{plot_6}},"poi":{{plot_7}},"confluence":{{plot_8}},"dt_stage":{{plot_9}},"h4_bias":"{{plot_10}}","p_d_zone":"{{plot_11}}","kill_zone":"{{plot_12}}","guardian":"{{plot_13}}","timestamp":"{{timenow}}","version":"v17.19"}')
+
+// 3. Retrace Long
+alertcondition(fire_retrace_long, title="Retrace Long", message='{"type":"retrace_long","setup_id":"dynamic","symbol":"{{ticker}}","suggested_entry":{{plot_0}},"target_sl":{{plot_1}},"target_tp":{{plot_2}},"poi":{{plot_7}},"confluence":{{plot_8}},"guardian":"{{plot_13}}","zone":"{{plot_11}}","kill_zone":"{{plot_12}}","timestamp":"{{timenow}}","version":"v17.19"}')
+
+// 4. Retrace Short
+alertcondition(fire_retrace_short, title="Retrace Short", message='{"type":"retrace_short","setup_id":"dynamic","symbol":"{{ticker}}","suggested_entry":{{plot_3}},"target_sl":{{plot_4}},"target_tp":{{plot_5}},"poi":{{plot_7}},"confluence":{{plot_8}},"guardian":"{{plot_13}}","zone":"{{plot_11}}","kill_zone":"{{plot_12}}","timestamp":"{{timenow}}","version":"v17.19"}')
+
+// ============================================================================
+// SECTION 22: HUD TABLE (v17.18 — VERTICAL 2-COLUMN LAYOUT + POSITION TOGGLE)
+// ============================================================================
+// Layout: 2 columns × 17 rows  (Label | Value)
+// Left column: dim grey labels (size.small)
+// Right column: color-coded values (size.small)
+// Background: color.new(color.black, 85) — 15% opacity glass tint
+// Position: user-selectable (Left/Right/Center) via hudPositionInput
+// ============================================================================
+
+// --- Pre-compute display strings (same logic as v17.14, kept outside if-block) ---
+
+// v17.5: State machine status strings (retained for internal use)
+smLongStr  = smStateLong == 1 ? "ACTIVE" : "IDLE"
+smShortStr = smStateShort == 1 ? "ACTIVE" : "IDLE"
+ctGateStr = isCounterTrendLong ? (ct5PassLong ? "CT:PASS" : "CT:BLOCKED") : isCounterTrendShort ? (ct5PassShort ? "CT:PASS" : "CT:BLOCKED") : "WITH-TREND"
+
+// Sniper Progress
+sniperProgressStr = bothIdle and not anyLongFired and not anyShortFired ? "IDLE" : "Stage " + str.tostring(dtDisplayStage) + "/5"
+sniperProgressColor = bothIdle and not anyLongFired and not anyShortFired ? color.new(color.gray, 30) : dtDisplayStage >= 4 ? color.green : dtDisplayStage >= 2 ? color.yellow : color.new(color.gray, 30)
+
+// Guardian
+guardDisplayStr = guardianDisplayCode == 0 ? "WAITING" : guardianDisplayCode == 1 ? "SNIPER BUY" : guardianDisplayCode == 2 ? "SNIPER SELL" : guardianDisplayCode == 3 ? "RETRACE BUY" : guardianDisplayCode == 4 ? "RETRACE SELL" : guardianDisplayCode == 5 ? "TRAP BUY" : guardianDisplayCode == 6 ? "TRAP SELL" : "—"
+guardDisplayColor = guardianDisplayCode == 0 ? color.new(color.gray, 30) : guardianDisplayCode >= 1 and guardianDisplayCode <= 2 ? color.green : guardianDisplayCode >= 3 and guardianDisplayCode <= 4 ? color.yellow : color.new(color.gray, 30)
+
+// Confluence
+confluenceStr = str.tostring(confluenceScore) + "/8"
+confluenceColor = confluenceScore >= 6 ? color.green : confluenceScore >= 4 ? color.yellow : confluenceScore >= 1 ? color.orange : color.new(color.gray, 30)
+
+// Kill Zone
+kzStr = isLondon() ? "London" : isNYAM() ? "NY AM" : isNYPM() ? "NY PM" : isAsian() ? "Asian" : "Off-Session"
+kzDisplayColor = kzActive ? color.green : color.new(color.gray, 30)
+
+// POI Score
+poiStr = str.tostring(poiScore) + "/5"
+poiColor = poiScore >= 4 ? color.green : poiScore >= 3 ? color.yellow : color.new(color.gray, 30)
+
+// Momentum
+momentumStr = str.tostring(momentumScore) + "/3 " + momentumFlags
+momentumColor = momentumScore >= 2 ? color.orange : color.new(color.gray, 30)
+
+// AMD Phase
+amdColor = amdPhase == 2 ? color.orange : amdPhase == 3 ? color.green : color.new(color.gray, 30)
+
+// Trade Context color
+tradeCtxColor = str.contains(tradeContext, "ACTIVE") ? color.green : str.contains(tradeContext, "CONFLICT") ? color.red : str.contains(tradeContext, "WAITING") ? color.yellow : color.new(color.gray, 30)
+
+// Action Step + Plan combined
+actionCombined = actionPlan != "" ? (actionStep + " → " + actionPlan) : actionStep
+
+// Last Alert
+string lastAlertTimeStr = last_alert_time > 0 ? str.format_time(last_alert_time, "HH:mm", syminfo.timezone) : "—"
+string lastAlertDisplay = last_alert_type != "" ? (last_alert_type + " | " + lastAlertTimeStr + " | " + last_alert_setup_id) : "No alerts fired"
+color  lastAlertColor   = last_alert_type != "" ? (str.contains(last_alert_type, "LONG") ? color.green : color.red) : color.new(color.gray, 30)
+
+// --- v17.19: HUD Float Mode — conditional background opacity ---
+bool _hudActive = hudModeInput == "Fixed" or barstate.islast or (last_alert_time > 0 and (timenow - last_alert_time) < 300000)
+color _tr  = hudModeInput == "Fixed" ? color.new(color.black, 40) : (_hudActive ? color.new(color.black, 40) : color.new(color.black, 85))
+// v17.19: Text Priority Hierarchy
+color _lbl = color.white                 // Headers: bright white
+color _act = color.lime                  // Active values: bright green
+color _dim = color.new(color.gray, 30)   // Neutral: light grey
+color _wrn = color.orange                // Warnings: orange
+color _inv = color.red                   // Invalidated: red
+color _sep = color.new(color.gray, 50)   // Separator
+color _frm = color.new(color.white, 80)  // v17.19: subtle border
+
+// ============================================================================
+// HUD TABLE — v17.19 COMPACT VERTICAL LAYOUT + FLOAT MODE
+// ============================================================================
+// Grid: 2 columns × 21 rows  (Col 0: Label | Col 1: Value)
+// Row 0:  Header "SMC P&D v17.19"
+// Row 1:  Bias             Row 9:   Confluence
+// Row 2:  Alignment        Row 10:  AMD Phase
+// Row 3:  Kill Zone        Row 11:  Trade Context
+// Row 4:  Sniper           Row 12:  Entry Mode
+// Row 5:  POI Score        Row 13:  Action Step
+// Row 6:  Momentum         Row 14:  Signal Stage
+// Row 7:  Guardian         Row 15:  Last Alert
+// Row 8:  (reserved)       Row 16:  Signals Today
+//                          Row 17:  Levels
+// Rows 18-21: Zone Debug (optional)
+// ============================================================================
+
+// v17.18: HUD position mapping
+hudPos = hudPositionInput == "Right" ? position.top_right : hudPositionInput == "Center" ? position.top_center : position.top_left
+
+// Signal Stage display string (maps sniper dtDisplayStage to readable text)
+string signalStageStr = dtDisplayStage == 0 ? "IDLE" : dtDisplayStage == 1 ? "SCAN" : dtDisplayStage == 2 ? "SETUP" : dtDisplayStage == 3 ? "CONFIRM" : dtDisplayStage == 4 ? "READY" : dtDisplayStage == 5 ? "FIRE" : "Stage " + str.tostring(dtDisplayStage)
+color  signalStageColor = dtDisplayStage >= 5 ? color.green : dtDisplayStage >= 4 ? color.lime : dtDisplayStage >= 3 ? color.yellow : dtDisplayStage >= 1 ? color.orange : _dim
+
+// Signals Today
+string sigTodayStr = str.tostring(sessionSignalCount) + " signals"
+color  sigTodayColor = sessionSignalCount > 0 ? color.green : _dim
+
+// Session Levels
+string sessLvlStr = (nearDailyLevel ? "Daily✓" : "Daily✗") + " " + (nearAsianLevel ? "Asian✓" : "Asian✗")
+color  sessLvlClr = nearDailyLevel or nearAsianLevel ? color.aqua : _dim
+
+if showHUD and barstate.islast
+    // v17.19: Vertical 2-column table, high-contrast bg, subtle border, compact size
+    var table hud = table.new(hudPos, 2, 22, bgcolor=_tr, frame_color=_frm, frame_width=1, border_color=_tr, border_width=0)
+
+    // ── Row 0: Header (bright white + yellow version — size.normal for prominence) ──
+    table.cell(hud, 0, 0, "SMC P&D",        text_color=color.white,  text_size=size.normal, bgcolor=_tr, text_halign=text.align_right)
+    table.cell(hud, 1, 0, "v17.19",          text_color=color.yellow, text_size=size.normal, bgcolor=_tr, text_halign=text.align_left)
+
+    // ── Row 1: Bias ──
+    table.cell(hud, 0, 1, "Bias",            text_color=_lbl, text_size=size.small, bgcolor=_tr, text_halign=text.align_right)
+    table.cell(hud, 1, 1, h4BiasStr,         text_color=h4ZoneColor, text_size=size.small, bgcolor=_tr, text_halign=text.align_left)
+
+    // ── Row 2: Alignment ──
+    table.cell(hud, 0, 2, "Align",           text_color=_lbl, text_size=size.small, bgcolor=_tr, text_halign=text.align_right)
+    table.cell(hud, 1, 2, alignmentStr,      text_color=alignmentConflict ? _inv : _act, text_size=size.small, bgcolor=_tr, text_halign=text.align_left)
+
+    // ── Row 3: Kill Zone ──
+    table.cell(hud, 0, 3, "KZ",              text_color=_lbl, text_size=size.small, bgcolor=_tr, text_halign=text.align_right)
+    table.cell(hud, 1, 3, kzStr,             text_color=kzDisplayColor, text_size=size.small, bgcolor=_tr, text_halign=text.align_left)
+
+    // ── Row 4: Sniper ──
+    table.cell(hud, 0, 4, "Sniper",          text_color=_lbl, text_size=size.small, bgcolor=_tr, text_halign=text.align_right)
+    table.cell(hud, 1, 4, sniperProgressStr, text_color=sniperProgressColor, text_size=size.small, bgcolor=_tr, text_halign=text.align_left)
+
+    // ── Row 5: POI Score ──
+    table.cell(hud, 0, 5, "POI",             text_color=_lbl, text_size=size.small, bgcolor=_tr, text_halign=text.align_right)
+    table.cell(hud, 1, 5, poiStr,            text_color=poiColor, text_size=size.small, bgcolor=_tr, text_halign=text.align_left)
+
+    // ── Row 6: Momentum ──
+    table.cell(hud, 0, 6, "Momentum",        text_color=_lbl, text_size=size.small, bgcolor=_tr, text_halign=text.align_right)
+    table.cell(hud, 1, 6, momentumStr,        text_color=momentumColor, text_size=size.small, bgcolor=_tr, text_halign=text.align_left)
+
+    // ── Row 7: Guardian ──
+    table.cell(hud, 0, 7, "Guardian",        text_color=_lbl, text_size=size.small, bgcolor=_tr, text_halign=text.align_right)
+    table.cell(hud, 1, 7, guardDisplayStr,   text_color=guardDisplayColor, text_size=size.small, bgcolor=_tr, text_halign=text.align_left)
+
+    // ── Row 8: Confluence ──
+    table.cell(hud, 0, 8, "Confl",           text_color=_lbl, text_size=size.small, bgcolor=_tr, text_halign=text.align_right)
+    table.cell(hud, 1, 8, confluenceStr,     text_color=confluenceColor, text_size=size.small, bgcolor=_tr, text_halign=text.align_left)
+
+    // ── Row 9: AMD Phase ──
+    table.cell(hud, 0, 9, "AMD",             text_color=_lbl, text_size=size.small, bgcolor=_tr, text_halign=text.align_right)
+    table.cell(hud, 1, 9, amdPhaseStr,       text_color=amdColor, text_size=size.small, bgcolor=_tr, text_halign=text.align_left)
+
+    // ── Row 10: Trade Context ──
+    table.cell(hud, 0, 10, "Trade",          text_color=_lbl, text_size=size.small, bgcolor=_tr, text_halign=text.align_right)
+    table.cell(hud, 1, 10, tradeContext,      text_color=tradeCtxColor, text_size=size.small, bgcolor=_tr, text_halign=text.align_left)
+
+    // ── Row 11: Entry Mode ──
+    table.cell(hud, 0, 11, "Entry",          text_color=_lbl, text_size=size.small, bgcolor=_tr, text_halign=text.align_right)
+    table.cell(hud, 1, 11, entryModeInput,   text_color=_dim, text_size=size.small, bgcolor=_tr, text_halign=text.align_left)
+
+    // ── Row 12: Action Step ──
+    table.cell(hud, 0, 12, "Action",         text_color=_lbl, text_size=size.small, bgcolor=_tr, text_halign=text.align_right)
+    table.cell(hud, 1, 12, actionCombined,   text_color=actionStepColor, text_size=size.small, bgcolor=_tr, text_halign=text.align_left)
+
+    // ── Row 13: Signal Stage ──
+    table.cell(hud, 0, 13, "Stage",          text_color=_lbl, text_size=size.small, bgcolor=_tr, text_halign=text.align_right)
+    table.cell(hud, 1, 13, signalStageStr,   text_color=signalStageColor, text_size=size.small, bgcolor=_tr, text_halign=text.align_left)
+
+    // ── Row 14: Last Alert ──
+    table.cell(hud, 0, 14, "Alert",          text_color=_lbl, text_size=size.small, bgcolor=_tr, text_halign=text.align_right)
+    table.cell(hud, 1, 14, lastAlertDisplay,  text_color=lastAlertColor, text_size=size.small, bgcolor=_tr, text_halign=text.align_left)
+
+    // ── Row 15: Signals Today ──
+    table.cell(hud, 0, 15, "Signals",        text_color=_lbl, text_size=size.small, bgcolor=_tr, text_halign=text.align_right)
+    table.cell(hud, 1, 15, sigTodayStr,       text_color=sigTodayColor, text_size=size.small, bgcolor=_tr, text_halign=text.align_left)
+
+    // ── Row 16: Levels ──
+    table.cell(hud, 0, 16, "Levels",         text_color=_lbl, text_size=size.small, bgcolor=_tr, text_halign=text.align_right)
+    table.cell(hud, 1, 16, sessLvlStr,        text_color=sessLvlClr, text_size=size.small, bgcolor=_tr, text_halign=text.align_left)
+
+    // ── Rows 17-20: Zone Debug (optional, toggled by showDebugRows AND showZoneDebug) ──
+    if showDebugRows and showZoneDebug
+        // Row 17: Zone config
+        string zoneConfigStr = "SRC:" + zoneSourceInput + " LB:" + str.tostring(effectiveLookback) + " RH:" + str.tostring(h4RangeHigh, "#.###") + " RL:" + str.tostring(h4RangeLow, "#.###")
+        table.cell(hud, 0, 17, "ZoneCfg",    text_color=color.new(color.gray, 40), text_size=size.tiny, bgcolor=_tr, text_halign=text.align_right)
+        table.cell(hud, 1, 17, zoneConfigStr, text_color=color.yellow, text_size=size.tiny, bgcolor=_tr, text_halign=text.align_left)
+
+        // Row 18: Zone Height
+        string zoneHeightStr = "H:" + str.tostring(h4Range, "#.###") + " MaxH:" + str.tostring(maxAllowedHeight, "#.###") + " ATR:" + str.tostring(h4ATR, "#.####")
+        string capStatus = zoneHeightCapped ? " ⚠CAPPED" : " ✓OK"
+        table.cell(hud, 0, 18, "ZoneHt",     text_color=color.new(color.gray, 40), text_size=size.tiny, bgcolor=_tr, text_halign=text.align_right)
+        table.cell(hud, 1, 18, zoneHeightStr + capStatus, text_color=zoneHeightCapped ? color.orange : color.green, text_size=size.tiny, bgcolor=_tr, text_halign=text.align_left)
+
+        // Row 19: Zone State
+        string zoneBoolStr = "C:" + str.tostring(close, "#.###") + " P:" + str.tostring(inPremiumZone) + " E:" + str.tostring(inEquilibriumZone) + " D:" + str.tostring(inDiscountZone) + " Fib:" + str.tostring(h4FibLevel, "#.#") + "%"
+        table.cell(hud, 0, 19, "ZoneSt",     text_color=color.new(color.gray, 40), text_size=size.tiny, bgcolor=_tr, text_halign=text.align_right)
+        table.cell(hud, 1, 19, zoneBoolStr,   text_color=color.orange, text_size=size.tiny, bgcolor=_tr, text_halign=text.align_left)
+
+        // Row 20: Zone Ratio
+        float premiumZoneHeight = h4PremiumTop - h4PremiumBottom
+        float eqZoneHeight = h4PremiumBottom - h4DiscountTop
+        float discountZoneHeight = h4DiscountTop - h4DiscountBottom
+        float pzPct = h4Range > 0 ? (premiumZoneHeight / h4Range) * 100 : 0.0
+        float eqPct = h4Range > 0 ? (eqZoneHeight / h4Range) * 100 : 0.0
+        float dzPct = h4Range > 0 ? (discountZoneHeight / h4Range) * 100 : 0.0
+        string ratioStr = "PZ:" + str.tostring(pzPct, "#.#") + "% EQ:" + str.tostring(eqPct, "#.#") + "% DZ:" + str.tostring(dzPct, "#.#") + "%"
+        bool ratioOk = math.abs(pzPct - 33.3) < 1.0 and math.abs(dzPct - 33.3) < 1.0
+        table.cell(hud, 0, 20, "Ratio",      text_color=color.new(color.gray, 40), text_size=size.tiny, bgcolor=_tr, text_halign=text.align_right)
+        table.cell(hud, 1, 20, ratioStr,      text_color=ratioOk ? color.aqua : color.red, text_size=size.tiny, bgcolor=_tr, text_halign=text.align_left)
+
+// ============================================================================
+// END OF INDICATOR v17.19
+// ============================================================================
