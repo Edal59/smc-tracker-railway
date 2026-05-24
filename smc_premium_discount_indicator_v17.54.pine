@@ -587,7 +587,7 @@ cooldownWindow    = input.int(5, "Cooldown Window (bars)", minval=1, maxval=30, 
 grpH4 = "📈 H4 Multi-TF Bias"
 showH4Zones       = input.bool(true, "Show H4 P&D Zones", group=grpH4)
 showInvalidation  = input.bool(true, "Show Invalidation in H4 Bias", group=grpH4)
-neutralZoneWidth  = input.float(33.3, "Neutral Zone Width (%)", minval=1.0, maxval=50.0, group=grpH4, tooltip="Controls the EQ (equilibrium) zone width as % of total range.\n33.3 = classic thirds (PZ top 1/3, EQ middle 1/3, DZ bottom 1/3).\n10 = narrow EQ band (original).")
+neutralZoneWidth  = input.float(0.0, "Neutral Zone Width (%)", minval=0.0, maxval=50.0, group=grpH4, tooltip="Controls the EQ (equilibrium) zone width as % of total range.\n0.0 = classic 50/50 split (Premium above EQ, Discount below EQ).\n33.3 = thirds (PZ top 1/3, EQ middle 1/3, DZ bottom 1/3).\n10 = narrow EQ band.")
 
 // --- Zone Range Configuration (v17.11) ---
 grpZoneRange = "📐 Zone Range Settings"
