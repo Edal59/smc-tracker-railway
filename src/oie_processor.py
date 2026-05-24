@@ -82,7 +82,8 @@ def detect_version(payload: dict) -> str:
 
 # ── v17.54 alert type normalization ──
 # v17.54 Pine Script uses alert() with dynamic JSON payloads.
-# Alert types come as: "A_PLUS_SNIPER_BUY", "A+ SNIPER BUY", "RETRACE_LONG", etc.
+# Alert types come as: "A+ SNIPER BUY", "A+ SNIPER SELL", "RETRACE LONG", etc.
+# Legacy underscore forms ("A_PLUS_SNIPER_BUY", "RETRACE_LONG") kept for backward compat.
 _V17_54_ALERT_MAP = {
     "A_PLUS_SNIPER_BUY": "sniper_long",
     "A+ SNIPER BUY": "sniper_long",
@@ -108,7 +109,7 @@ def normalize_v17_54_payload(payload: dict) -> dict:
     Normalize a v17.54 dynamic JSON payload into the standard OIE format.
 
     v17.54 payloads look like:
-        {"version":"v17.54","alert":"A_PLUS_SNIPER_BUY","symbol":"GBPUSD",
+        {"version":"v17.54","alert":"A+ SNIPER BUY","symbol":"GBPUSD",
          "timeframe":"5","price":"1.34195","message":"v17.54 A+ SNIPER BUY - Aligned with Trend. Target 1:3 RR."}
 
     or with subtype:

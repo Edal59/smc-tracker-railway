@@ -2466,26 +2466,26 @@ if enable_alert_debug
 // No more {{plot_X}} dependencies — cleaner, more reliable alerts.
 
 // alertcondition() kept for backward compatibility (TradingView dropdown selection)
-alertcondition(fire_sniper_long, title="Sniper Long", message='{"version":"v17.54","alert":"A_PLUS_SNIPER_BUY","symbol":"{{ticker}}","timeframe":"{{interval}}","price":"{{close}}","message":"v17.54 A+ SNIPER BUY - Aligned with Trend. Target 1:3 RR."}')
+alertcondition(fire_sniper_long, title="Sniper Long", message='{"version":"v17.54","alert":"A+ SNIPER BUY","symbol":"{{ticker}}","timeframe":"{{interval}}","price":"{{close}}","message":"v17.54 A+ SNIPER BUY - Aligned with Trend. Target 1:3 RR."}')
 
-alertcondition(fire_sniper_short, title="Sniper Short", message='{"version":"v17.54","alert":"A_PLUS_SNIPER_SELL","symbol":"{{ticker}}","timeframe":"{{interval}}","price":"{{close}}","message":"v17.54 A+ SNIPER SELL - Aligned with Trend. Target 1:3 RR."}')
+alertcondition(fire_sniper_short, title="Sniper Short", message='{"version":"v17.54","alert":"A+ SNIPER SELL","symbol":"{{ticker}}","timeframe":"{{interval}}","price":"{{close}}","message":"v17.54 A+ SNIPER SELL - Aligned with Trend. Target 1:3 RR."}')
 
-alertcondition(fire_retrace_long, title="Retrace Long", message='{"version":"v17.54","alert":"RETRACE_LONG","subtype":"standard","symbol":"{{ticker}}","timeframe":"{{interval}}","price":"{{close}}","message":"v17.54 RETRACE LONG - Target: EQ Line."}')
+alertcondition(fire_retrace_long, title="Retrace Long", message='{"version":"v17.54","alert":"RETRACE LONG","subtype":"standard","symbol":"{{ticker}}","timeframe":"{{interval}}","price":"{{close}}","message":"v17.54 RETRACE LONG - Target: EQ Line."}')
 
-alertcondition(fire_retrace_short, title="Retrace Short", message='{"version":"v17.54","alert":"RETRACE_SHORT","subtype":"standard","symbol":"{{ticker}}","timeframe":"{{interval}}","price":"{{close}}","message":"v17.54 RETRACE SHORT - Target: EQ Line."}')
+alertcondition(fire_retrace_short, title="Retrace Short", message='{"version":"v17.54","alert":"RETRACE SHORT","subtype":"standard","symbol":"{{ticker}}","timeframe":"{{interval}}","price":"{{close}}","message":"v17.54 RETRACE SHORT - Target: EQ Line."}')
 
 // v17.54 alert() calls — fired in real-time (preferred over alertcondition)
 if fire_sniper_long
-    alert('{"version":"v17.54","alert":"A_PLUS_SNIPER_BUY","symbol":"' + syminfo.ticker + '","timeframe":"' + timeframe.period + '","price":"' + str.tostring(close) + '","message":"v17.54 A+ SNIPER BUY - Aligned with Trend. Target 1:3 RR."}', alert.freq_once_per_bar_close)
+    alert('{"version":"v17.54","alert":"A+ SNIPER BUY","symbol":"' + syminfo.ticker + '","timeframe":"' + timeframe.period + '","price":"' + str.tostring(close) + '","message":"v17.54 A+ SNIPER BUY - Aligned with Trend. Target 1:3 RR."}', alert.freq_once_per_bar_close)
 
 if fire_sniper_short
-    alert('{"version":"v17.54","alert":"A_PLUS_SNIPER_SELL","symbol":"' + syminfo.ticker + '","timeframe":"' + timeframe.period + '","price":"' + str.tostring(close) + '","message":"v17.54 A+ SNIPER SELL - Aligned with Trend. Target 1:3 RR."}', alert.freq_once_per_bar_close)
+    alert('{"version":"v17.54","alert":"A+ SNIPER SELL","symbol":"' + syminfo.ticker + '","timeframe":"' + timeframe.period + '","price":"' + str.tostring(close) + '","message":"v17.54 A+ SNIPER SELL - Aligned with Trend. Target 1:3 RR."}', alert.freq_once_per_bar_close)
 
 if fire_retrace_long
-    alert('{"version":"v17.54","alert":"RETRACE_LONG","subtype":"standard","symbol":"' + syminfo.ticker + '","timeframe":"' + timeframe.period + '","price":"' + str.tostring(close) + '","message":"v17.54 RETRACE LONG - Target: EQ Line."}', alert.freq_once_per_bar_close)
+    alert('{"version":"v17.54","alert":"RETRACE LONG","subtype":"standard","symbol":"' + syminfo.ticker + '","timeframe":"' + timeframe.period + '","price":"' + str.tostring(close) + '","message":"v17.54 RETRACE LONG - Target: EQ Line."}', alert.freq_once_per_bar_close)
 
 if fire_retrace_short
-    alert('{"version":"v17.54","alert":"RETRACE_SHORT","subtype":"standard","symbol":"' + syminfo.ticker + '","timeframe":"' + timeframe.period + '","price":"' + str.tostring(close) + '","message":"v17.54 RETRACE SHORT - Target: EQ Line."}', alert.freq_once_per_bar_close)
+    alert('{"version":"v17.54","alert":"RETRACE SHORT","subtype":"standard","symbol":"' + syminfo.ticker + '","timeframe":"' + timeframe.period + '","price":"' + str.tostring(close) + '","message":"v17.54 RETRACE SHORT - Target: EQ Line."}', alert.freq_once_per_bar_close)
 
 // ============================================================================
 // SECTION 22: HUD TABLE (v17.18 — VERTICAL 2-COLUMN LAYOUT + POSITION TOGGLE)
