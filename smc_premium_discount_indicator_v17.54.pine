@@ -2033,68 +2033,108 @@ if showH4Zones and barstate.islast
     pdDiscThreshLine := line.new(bar_index - 50, h4DiscountTop, bar_index + 50, h4DiscountTop, color=color.new(color.green, 60), style=line.style_dashed, width=1, extend=extend.right)
 
 // ============================================================================
-// v17.5 FIX 3: INSTITUTIONAL SUPPLY & DEMAND ZONES
+// v17.54 FIX: MULTI-ZONE SUPPLY & DEMAND (array-based)
 // ============================================================================
+// v17.54 restores proper multi-zone rendering for 5M charts.
+// Uses array-based tracking so MULTIPLE Supply and Demand zones are visible
+// simultaneously, matching expected SMC zone density on lower timeframes.
+//
 // Detects significant reversal zones from swing structure:
 // - Demand: Area where price reversed UP after making a swing low with displacement
 // - Supply: Area where price reversed DOWN after making a swing high with displacement
 //
 // Zones are drawn as labeled boxes matching user's design:
-// - Demand: Green fill, Purple border, "Demand" text inside
-// - Supply: Orange fill, Purple border, "Supply" text inside
+// - Demand: Green fill, Purple border, "⬤ DEMAND" text inside
+// - Supply: Orange fill, Purple border, "⬤ SUPPLY" text inside
+//
+// Zone lifecycle:
+//   1. Created when swing point + displacement threshold met
+//   2. Invalidated when price closes significantly through the zone
+//   3. Maximum 10 active zones per type (oldest trimmed first)
+//   4. All zone boxes redrawn on last bar for clean rendering
 
-// --- Demand zone tracking (bullish reversal area) ---
-var float demandTop    = na
-var float demandBot    = na
-var int   demandBar    = 0
-var bool  demandActive = false
-var box   demandBox    = na
+int maxZones = 10  // Maximum active zones per type (supply / demand)
 
-// --- Supply zone tracking (bearish reversal area) ---
-var float supplyTop    = na
-var float supplyBot    = na
-var int   supplyBar    = 0
-var bool  supplyActive = false
-var box   supplyBox    = na
+// --- Demand zone arrays (bullish reversal areas) ---
+var array<float> dTop    = array.new_float(0)
+var array<float> dBot    = array.new_float(0)
+var array<int>   dBar    = array.new_int(0)
+var array<box>   dBoxes  = array.new_box(0)
+
+// --- Supply zone arrays (bearish reversal areas) ---
+var array<float> sTop    = array.new_float(0)
+var array<float> sBot    = array.new_float(0)
+var array<int>   sBar    = array.new_int(0)
+var array<box>   sBoxes  = array.new_box(0)
 
 // Demand zone: Detect when price sweeps a swing low and reverses up with displacement
 // This creates a "demand" area at the low region where buyers stepped in
 if not na(swLow) and displacement > 0.5
-    demandBot    := swLow
-    demandTop    := swLow + atrValue * 0.5
-    demandBar    := bar_index - swingLen
-    demandActive := true
+    float _dBot = swLow
+    float _dTop = swLow + atrValue * 0.5
+    int   _dBar = bar_index - swingLen
+    array.push(dBot, _dBot)
+    array.push(dTop, _dTop)
+    array.push(dBar, _dBar)
+    // Trim to max zones (remove oldest = index 0)
+    if array.size(dTop) > maxZones
+        array.shift(dTop)
+        array.shift(dBot)
+        array.shift(dBar)
 
 // Supply zone: Detect when price sweeps a swing high and reverses down with displacement
 if not na(swHigh) and displacement > 0.5
-    supplyTop    := swHigh
-    supplyBot    := swHigh - atrValue * 0.5
-    supplyBar    := bar_index - swingLen
-    supplyActive := true
+    float _sTop = swHigh
+    float _sBot = swHigh - atrValue * 0.5
+    int   _sBar = bar_index - swingLen
+    array.push(sTop, _sTop)
+    array.push(sBot, _sBot)
+    array.push(sBar, _sBar)
+    // Trim to max zones (remove oldest = index 0)
+    if array.size(sTop) > maxZones
+        array.shift(sTop)
+        array.shift(sBot)
+        array.shift(sBar)
 
-// Invalidate demand if price closes significantly below
-if demandActive and close < demandBot - atrValue * 0.3
-    demandActive := false
+// Invalidate demand zones if price closes significantly below
+if array.size(dTop) > 0
+    int _di = array.size(dTop) - 1
+    while _di >= 0
+        if close < array.get(dBot, _di) - atrValue * 0.3
+            array.remove(dTop, _di)
+            array.remove(dBot, _di)
+            array.remove(dBar, _di)
+        _di -= 1
 
-// Invalidate supply if price closes significantly above
-if supplyActive and close > supplyTop + atrValue * 0.3
-    supplyActive := false
+// Invalidate supply zones if price closes significantly above
+if array.size(sTop) > 0
+    int _si = array.size(sTop) - 1
+    while _si >= 0
+        if close > array.get(sTop, _si) + atrValue * 0.3
+            array.remove(sTop, _si)
+            array.remove(sBot, _si)
+            array.remove(sBar, _si)
+        _si -= 1
 
-// Draw/update Supply & Demand zone boxes
+// Draw/update all Supply & Demand zone boxes on last bar
 if barstate.islast
     // Clean up previous boxes
-    if not na(demandBox)
-        box.delete(demandBox)
-    if not na(supplyBox)
-        box.delete(supplyBox)
+    for _b in dBoxes
+        box.delete(_b)
+    array.clear(dBoxes)
+    for _b in sBoxes
+        box.delete(_b)
+    array.clear(sBoxes)
 
-    // Draw Demand zone (green fill, purple border, "Demand" label)
-    if demandActive and not na(demandTop) and not na(demandBot)
-        demandBox := box.new(demandBar, demandTop, bar_index + 10, demandBot, bgcolor=color.new(color.green, 55), border_color=color.new(color.purple, 20), border_width=2, text="⬤ DEMAND", text_size=size.large, text_color=color.new(color.gray, 20), text_halign=text.align_center, text_valign=text.align_center)
+    // Draw all active Demand zones (green fill, purple border, "⬤ DEMAND" label)
+    for _i = 0 to math.max(array.size(dTop) - 1, 0)
+        if _i < array.size(dTop)
+            array.push(dBoxes, box.new(array.get(dBar, _i), array.get(dTop, _i), bar_index + 10, array.get(dBot, _i), bgcolor=color.new(color.green, 55), border_color=color.new(color.purple, 20), border_width=2, text="⬤ DEMAND", text_size=size.large, text_color=color.new(color.gray, 20), text_halign=text.align_center, text_valign=text.align_center))
 
-    // Draw Supply zone (orange fill, purple border, "Supply" label)
-    if supplyActive and not na(supplyTop) and not na(supplyBot)
-        supplyBox := box.new(supplyBar, supplyTop, bar_index + 10, supplyBot, bgcolor=color.new(color.orange, 55), border_color=color.new(color.purple, 20), border_width=2, text="⬤ SUPPLY", text_size=size.large, text_color=color.new(color.gray, 20), text_halign=text.align_center, text_valign=text.align_center)
+    // Draw all active Supply zones (orange fill, purple border, "⬤ SUPPLY" label)
+    for _i = 0 to math.max(array.size(sTop) - 1, 0)
+        if _i < array.size(sTop)
+            array.push(sBoxes, box.new(array.get(sBar, _i), array.get(sTop, _i), bar_index + 10, array.get(sBot, _i), bgcolor=color.new(color.orange, 55), border_color=color.new(color.purple, 20), border_width=2, text="⬤ SUPPLY", text_size=size.large, text_color=color.new(color.gray, 20), text_halign=text.align_center, text_valign=text.align_center))
 
 // --- FVG micro-zones REMOVED (v17.5 Final) ---
 // REMOVED: These created overlapping boxes on candles every bar while FVG was active,
