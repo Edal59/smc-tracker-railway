@@ -62,7 +62,7 @@ git push origin feat/your-feature-name
 
 ### Version Bump Checklist
 
-When updating the Pine Script indicator version (e.g., v17.25 → v17.26):
+When updating the Pine Script indicator version (e.g., v17.54 → v17.26):
 
 - [ ] Update `src/config.py` — version string
 - [ ] Update `app.py` — startup log version
@@ -85,7 +85,7 @@ curl https://web-production-b63af.up.railway.app/api/v1/health
 
 Expected response:
 ```json
-{"status": "ok", "version": "v17.25"}
+{"status": "ok", "version": "v17.54"}
 ```
 
 ### 2. Check Railway Dashboard
@@ -253,4 +253,4 @@ python app.py
 
 ---
 
-*Last updated: May 24, 2026 — v17.25*
+*Last updated: May 24, 2026 — v17.54*

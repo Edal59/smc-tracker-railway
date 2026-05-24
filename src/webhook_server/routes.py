@@ -10,7 +10,7 @@ from flask import Blueprint, request, jsonify
 from src.config import config
 from src.webhook_server.validators import validate_alert
 from src.tracker.processor import process_alert
-from src.oie_processor import is_oie_payload, normalize_oie_payload, oie_to_legacy_compact
+from src.oie_processor import is_oie_payload, normalize_oie_payload, oie_to_legacy_compact, normalize_v17_54_payload
 from src.oie_database import (
     insert_opportunity, get_opportunity, get_opportunities,
     count_opportunities, get_oie_summary
@@ -72,7 +72,7 @@ def health_check():
     return jsonify({
         'status': 'ok',
         'service': 'SMC Performance Tracker',
-        'version': 'v17.25',
+        'version': 'v17.54',
     })
 
 
@@ -153,7 +153,7 @@ def receive_signal():
         return jsonify({
             "status": "ok",
             "message": "SMC Performance Tracker Webhook Endpoint",
-            "version": "v17.25",
+            "version": "v17.54",
             "accepts": "POST",
             "endpoint": "/api/v1/signal"
         }), 200
@@ -179,9 +179,9 @@ def receive_signal():
     if not data:
         return jsonify({'error': 'Invalid JSON payload'}), 400
 
-    # ── v17.25 OIE format detection ──
-    # OIE payloads have type: "sniper_long"|"sniper_short"|"retrace_long"|"retrace_short"
-    # and version starting with "v17.14"
+    # ── v17.54 / v17.25 OIE format detection ──
+    # v17.54: alert() payloads with "alert" field + version "v17.5x"
+    # v17.25: alertcondition() payloads with "type" field + version "v17.14/v17.25"
     if is_oie_payload(data):
         try:
             # 1. Normalize into opportunity record
