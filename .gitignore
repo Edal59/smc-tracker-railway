@@ -1,3 +1,7 @@
+# =============================================
+# SMC Performance Tracker — .gitignore
+# =============================================
+
 # Python
 __pycache__/
 *.py[cod]
@@ -7,37 +11,59 @@ __pycache__/
 dist/
 build/
 .eggs/
+*.whl
 
 # Virtual environment
 venv/
 env/
 .venv/
+.virtualenv/
 
 # IDE
 .vscode/
 .idea/
 *.swp
 *.swo
+*.sublime-project
+*.sublime-workspace
 
-# Environment
+# Environment variables (NEVER commit secrets)
 .env
+.env.local
+.env.production
+.env.staging
 
 # Data (keep structure, ignore data files)
 data/*.db
 data/*.db-wal
 data/*.db-shm
 logs/*.log
+*.sqlite3
 
 # OS
 .DS_Store
 Thumbs.db
+*.bak
+*.tmp
 
-# Railway
+# Railway build artifacts
 .nixpacks/
 
-
-# Frontend (Next.js)
+# Frontend (Next.js / React)
 tradex-frontend/node_modules/
 tradex-frontend/.next/
 tradex-frontend/out/
 tradex-frontend/.env.local
+tradex-frontend/.env.production.local
+tradex-frontend/.turbo/
+node_modules/
+
+# Test / Coverage
+.coverage
+htmlcov/
+.pytest_cache/
+.tox/
+
+# Misc
+*.log
+.cache/
