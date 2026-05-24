@@ -1,12 +1,13 @@
 // This Pine Script™ is subject to the terms of the Mozilla Public License 2.0
 // © SMC Trading System
 //@version=6
-indicator("SMC Premium/Discount Confluence Engine v17.54", shorttitle="SMC PD v17", overlay=true, max_labels_count=500, max_lines_count=500, max_boxes_count=500)
+indicator("SMC Premium/Discount Confluence Engine v17.54.1", shorttitle="SMC PD v17", overlay=true, max_labels_count=500, max_lines_count=500, max_boxes_count=500, max_bars_back=5000)
+max_bars_back(time, 5000)
 
 // ============================================================================
-// v17.54 CHANGELOG — Asian & Daily Level Visibility (NO logic/filter/alert changes)
+// v17.54.1 CHANGELOG — Asian & Daily Level Visibility (NO logic/filter/alert changes)
 // ============================================================================
-// [2026-05-17] v17.54 — Visual-Only Update (NO logic/filter/alert changes)
+// [2026-05-17] v17.54.1 — Visual-Only Update (NO logic/filter/alert changes)
 //
 // ENHANCEMENT: Asian Session & Daily Level Visibility Boost
 //   - Daily H/L lines: color.blue transparency 30→0, width 1→2, labels fully opaque
@@ -336,7 +337,7 @@ indicator("SMC Premium/Discount Confluence Engine v17.54", shorttitle="SMC PD v1
 //   Added two subtle dashed lines at the Premium Bottom (66.7%) and 
 //   Discount Top (33.3%) boundaries for clearer zone demarcation.
 //
-// Plot budget: 33/64 (v17.54: EQ moved to line.new(), -1 plot)
+// Plot budget: 33/64 (v17.54.1: EQ moved to line.new(), -1 plot)
 // ============================================================================
 // v17.11 CHANGELOG — FLEXIBLE P&D ZONE RANGE CONTROLS
 // ----------------------------------------------------------------------------
@@ -891,10 +892,10 @@ if showDailyHL and barstate.islast
     line.delete(dailyLowLine)
     label.delete(dailyHighLabel)
     label.delete(dailyLowLabel)
-    // Draw new lines — v17.54: width 2, zero transparency for max visibility
+    // Draw new lines — v17.54.1: width 2, zero transparency for max visibility
     dailyHighLine := line.new(bar_index - 50, dailyHigh, bar_index + 50, dailyHigh, color=dailyLineColor, style=line.style_dashed, width=2, extend=extend.right)
     dailyLowLine  := line.new(bar_index - 50, dailyLow, bar_index + 50, dailyLow, color=dailyLineColor, style=line.style_dashed, width=2, extend=extend.right)
-    // Labels — v17.54: fully opaque background, white text, size.small
+    // Labels — v17.54.1: fully opaque background, white text, size.small
     dailyHighLabel := label.new(bar_index + 5, dailyHigh, "Daily H", style=label.style_label_left, color=color.new(color.blue, 0), textcolor=color.new(color.white, 0), size=size.small)
     dailyLowLabel  := label.new(bar_index + 5, dailyLow, "Daily L", style=label.style_label_left, color=color.new(color.blue, 0), textcolor=color.new(color.white, 0), size=size.small)
 
@@ -910,10 +911,10 @@ if showAsianHL and barstate.islast
     line.delete(asianLowLine)
     label.delete(asianHighLabel)
     label.delete(asianLowLabel)
-    // Draw new lines — v17.54: width 2, zero transparency for max visibility
+    // Draw new lines — v17.54.1: width 2, zero transparency for max visibility
     asianHighLine := line.new(bar_index - 50, asiHi, bar_index + 50, asiHi, color=asianLineColor, style=line.style_dotted, width=2, extend=extend.right)
     asianLowLine  := line.new(bar_index - 50, asiLo, bar_index + 50, asiLo, color=asianLineColor, style=line.style_dotted, width=2, extend=extend.right)
-    // Labels — v17.54: fully opaque background, white text, size.small
+    // Labels — v17.54.1: fully opaque background, white text, size.small
     asianHighLabel := label.new(bar_index + 5, asiHi, "Asian H", style=label.style_label_left, color=color.new(color.orange, 0), textcolor=color.new(color.white, 0), size=size.small)
     asianLowLabel  := label.new(bar_index + 5, asiLo, "Asian L", style=label.style_label_left, color=color.new(color.orange, 0), textcolor=color.new(color.white, 0), size=size.small)
 
@@ -2033,9 +2034,9 @@ if showH4Zones and barstate.islast
     pdDiscThreshLine := line.new(bar_index - 50, h4DiscountTop, bar_index + 50, h4DiscountTop, color=color.new(color.green, 60), style=line.style_dashed, width=1, extend=extend.right)
 
 // ============================================================================
-// v17.54 FIX: MULTI-ZONE SUPPLY & DEMAND (array-based)
+// v17.54.1 FIX: MULTI-ZONE SUPPLY & DEMAND (array-based)
 // ============================================================================
-// v17.54 restores proper multi-zone rendering for 5M charts.
+// v17.54.1 restores proper multi-zone rendering for 5M charts.
 // Uses array-based tracking so MULTIPLE Supply and Demand zones are visible
 // simultaneously, matching expected SMC zone density on lower timeframes.
 //
@@ -2147,15 +2148,15 @@ if barstate.islast
 // OB detection logic remains 100% active for POI scoring, signal gating, and alerts.
 
 // ============================================================================
-// EQ LINE — line.new() implementation, v17.54 FINAL FIX
+// EQ LINE — line.new() implementation, v17.54.1 FINAL FIX
 // ============================================================================
 // Uses line.new() with delete-and-redraw for proper flat horizontal EQ line.
 // Spans from zone start (bar_index - 50) to current bar, matching P&D box extent.
 // No title/label — nothing appears on right price scale.
-// v17.54: Replaced plot() to eliminate price scale label and ensure flat line.
+// v17.54.1: Replaced plot() to eliminate price scale label and ensure flat line.
 // ============================================================================
 
-// v17.54 FINAL EQ FIX — line.new() replaces plot()
+// v17.54.1 FINAL EQ FIX — line.new() replaces plot()
 var line final_eq_line = na
 
 // 1. Delete the old line every single bar to ensure NO ghosting or squiggles
@@ -2224,7 +2225,7 @@ plot(structureStateCode, "Alert Structure State", display=display.none)         
 // - Re-Entry prices: Visualized separately via plotshape
 // - AMD Phase, IPM Long/Short, CT Lite flags: Secondary alerts
 
-// v17.54 FIX: EQ line now uses line.new() with delete-and-redraw (yellow, width 3)
+// v17.54.1 FIX: EQ line now uses line.new() with delete-and-redraw (yellow, width 3)
 // This replaces the plot() approach which showed "SMC PD v17:EQ" on the price scale.
 // line.new() gives a proper flat horizontal line spanning the zone extent.
 
@@ -2277,7 +2278,7 @@ bgcolor(kzActive and enableKZ ? color.new(color.gray, 96) : na) // plot 53
 // Conflict background
 bgcolor(alignmentConflict ? color.new(color.red, 97) : na) // plot 54
 
-// v17.54: Equilibrium now uses line.new() (yellow, width 3) — flat horizontal, no price scale label
+// v17.54.1: Equilibrium now uses line.new() (yellow, width 3) — flat horizontal, no price scale label
 // Previous plot() approach removed to eliminate price scale label and ensure proper flat line
 
 cooldownActiveLong  = not isCooledDown(lastSniperLongBar) or not isCooledDown(lastTier2LongBar)
@@ -2287,9 +2288,9 @@ cooldownActiveShort = not isCooledDown(lastSniperShortBar) or not isCooledDown(l
 plot(enableHierarchy ? 1 : 0, "Hierarchy Active", display=display.none) // plot 55
 plot(cooldownWindow, "Cooldown Window", display=display.none)           // plot 56
 
-// TOTAL after v17.54: 33/64 outputs ✓ SAFE MARGIN +31
+// TOTAL after v17.54.1: 33/64 outputs ✓ SAFE MARGIN +31
 // 22 plot() + 5 plotshape() + 2 bgcolor() + 4 alertcondition() = 33 total components
-// v17.54: -1 plot (EQ line moved from plot() to line.new() — no plot budget cost)
+// v17.54.1: -1 plot (EQ line moved from plot() to line.new() — no plot budget cost)
 // v17.16 additions: +1 plotshape (heartbeat), +1 plot (session signal counter)
 // S&D zones use box.new (no plot budget cost).
 // v17.6 Action Step + Action Plan use table.cell only (no plot cost).
@@ -2500,32 +2501,32 @@ if enable_alert_debug
                 table.cell(debug_table, 5, i + 1, array.get(debug_tps, i),     text_color=color.green,  text_size=size.tiny)
                 table.cell(debug_table, 6, i + 1, array.get(debug_cfs, i),     text_color=color.yellow, text_size=size.tiny)
 
-// ---- v17.54 ALERT() ARCHITECTURE ----
-// v17.54 replaces alertcondition() with alert() for dynamic JSON payloads.
+// ---- v17.54.1 ALERT() ARCHITECTURE ----
+// v17.54.1 replaces alertcondition() with alert() for dynamic JSON payloads.
 // Uses {{ticker}}, {{interval}}, {{close}} TradingView placeholders.
 // No more {{plot_X}} dependencies — cleaner, more reliable alerts.
 
 // alertcondition() kept for backward compatibility (TradingView dropdown selection)
-alertcondition(fire_sniper_long, title="Sniper Long", message='{"version":"v17.54","alert":"A+ SNIPER BUY","symbol":"{{ticker}}","timeframe":"{{interval}}","price":"{{close}}","message":"v17.54 A+ SNIPER BUY - Aligned with Trend. Target 1:3 RR."}')
+alertcondition(fire_sniper_long, title="Sniper Long", message='{"version":"v17.54.1","alert":"A+ SNIPER BUY","symbol":"{{ticker}}","timeframe":"{{interval}}","price":"{{close}}","message":"v17.54.1 A+ SNIPER BUY - Aligned with Trend. Target 1:3 RR."}')
 
-alertcondition(fire_sniper_short, title="Sniper Short", message='{"version":"v17.54","alert":"A+ SNIPER SELL","symbol":"{{ticker}}","timeframe":"{{interval}}","price":"{{close}}","message":"v17.54 A+ SNIPER SELL - Aligned with Trend. Target 1:3 RR."}')
+alertcondition(fire_sniper_short, title="Sniper Short", message='{"version":"v17.54.1","alert":"A+ SNIPER SELL","symbol":"{{ticker}}","timeframe":"{{interval}}","price":"{{close}}","message":"v17.54.1 A+ SNIPER SELL - Aligned with Trend. Target 1:3 RR."}')
 
-alertcondition(fire_retrace_long, title="Retrace Long", message='{"version":"v17.54","alert":"RETRACE LONG","subtype":"standard","symbol":"{{ticker}}","timeframe":"{{interval}}","price":"{{close}}","message":"v17.54 RETRACE LONG - Target: EQ Line."}')
+alertcondition(fire_retrace_long, title="Retrace Long", message='{"version":"v17.54.1","alert":"RETRACE LONG","subtype":"standard","symbol":"{{ticker}}","timeframe":"{{interval}}","price":"{{close}}","message":"v17.54.1 RETRACE LONG - Target: EQ Line."}')
 
-alertcondition(fire_retrace_short, title="Retrace Short", message='{"version":"v17.54","alert":"RETRACE SHORT","subtype":"standard","symbol":"{{ticker}}","timeframe":"{{interval}}","price":"{{close}}","message":"v17.54 RETRACE SHORT - Target: EQ Line."}')
+alertcondition(fire_retrace_short, title="Retrace Short", message='{"version":"v17.54.1","alert":"RETRACE SHORT","subtype":"standard","symbol":"{{ticker}}","timeframe":"{{interval}}","price":"{{close}}","message":"v17.54.1 RETRACE SHORT - Target: EQ Line."}')
 
-// v17.54 alert() calls — fired in real-time (preferred over alertcondition)
+// v17.54.1 alert() calls — fired in real-time (preferred over alertcondition)
 if fire_sniper_long
-    alert('{"version":"v17.54","alert":"A+ SNIPER BUY","symbol":"' + syminfo.ticker + '","timeframe":"' + timeframe.period + '","price":"' + str.tostring(close) + '","message":"v17.54 A+ SNIPER BUY - Aligned with Trend. Target 1:3 RR."}', alert.freq_once_per_bar_close)
+    alert('{"version":"v17.54.1","alert":"A+ SNIPER BUY","symbol":"' + syminfo.ticker + '","timeframe":"' + timeframe.period + '","price":"' + str.tostring(close) + '","message":"v17.54.1 A+ SNIPER BUY - Aligned with Trend. Target 1:3 RR."}', alert.freq_once_per_bar_close)
 
 if fire_sniper_short
-    alert('{"version":"v17.54","alert":"A+ SNIPER SELL","symbol":"' + syminfo.ticker + '","timeframe":"' + timeframe.period + '","price":"' + str.tostring(close) + '","message":"v17.54 A+ SNIPER SELL - Aligned with Trend. Target 1:3 RR."}', alert.freq_once_per_bar_close)
+    alert('{"version":"v17.54.1","alert":"A+ SNIPER SELL","symbol":"' + syminfo.ticker + '","timeframe":"' + timeframe.period + '","price":"' + str.tostring(close) + '","message":"v17.54.1 A+ SNIPER SELL - Aligned with Trend. Target 1:3 RR."}', alert.freq_once_per_bar_close)
 
 if fire_retrace_long
-    alert('{"version":"v17.54","alert":"RETRACE LONG","subtype":"standard","symbol":"' + syminfo.ticker + '","timeframe":"' + timeframe.period + '","price":"' + str.tostring(close) + '","message":"v17.54 RETRACE LONG - Target: EQ Line."}', alert.freq_once_per_bar_close)
+    alert('{"version":"v17.54.1","alert":"RETRACE LONG","subtype":"standard","symbol":"' + syminfo.ticker + '","timeframe":"' + timeframe.period + '","price":"' + str.tostring(close) + '","message":"v17.54.1 RETRACE LONG - Target: EQ Line."}', alert.freq_once_per_bar_close)
 
 if fire_retrace_short
-    alert('{"version":"v17.54","alert":"RETRACE SHORT","subtype":"standard","symbol":"' + syminfo.ticker + '","timeframe":"' + timeframe.period + '","price":"' + str.tostring(close) + '","message":"v17.54 RETRACE SHORT - Target: EQ Line."}', alert.freq_once_per_bar_close)
+    alert('{"version":"v17.54.1","alert":"RETRACE SHORT","subtype":"standard","symbol":"' + syminfo.ticker + '","timeframe":"' + timeframe.period + '","price":"' + str.tostring(close) + '","message":"v17.54.1 RETRACE SHORT - Target: EQ Line."}', alert.freq_once_per_bar_close)
 
 // ============================================================================
 // SECTION 22: HUD TABLE (v17.18 — VERTICAL 2-COLUMN LAYOUT + POSITION TOGGLE)
@@ -2596,7 +2597,7 @@ string lastAlertDisplay = last_alert_type != "" ? (last_alert_type + " | " + las
 color  lastAlertColor   = last_alert_type != "" ? _act : _dim  // v17.22: signal fired=lime, else uniform
 
 // ============================================================================
-// HUD TABLE — v17.54 NAVY BLUE COMPACT VERTICAL LAYOUT + FLOAT MODE
+// HUD TABLE — v17.54.1 NAVY BLUE COMPACT VERTICAL LAYOUT + FLOAT MODE
 // ============================================================================
 // Grid: 2 columns × 21 rows  (Col 0: Label | Col 1: Value)
 // Row 0:  Header "SMC P&D v17.20"
@@ -2633,7 +2634,7 @@ if showHUD and barstate.islast
 
     // ── Row 0: Header (bright white + yellow version — brighter navy bg) ──
     table.cell(hud, 0, 0, "SMC P&D",        text_color=color.white,  text_size=size.normal, bgcolor=_hdr, text_halign=text.align_right)
-    table.cell(hud, 1, 0, "v17.54",          text_color=color.yellow, text_size=size.normal, bgcolor=_hdr, text_halign=text.align_left)
+    table.cell(hud, 1, 0, "v17.54.1",          text_color=color.yellow, text_size=size.normal, bgcolor=_hdr, text_halign=text.align_left)
 
     // ── Row 1: Bias ──
     table.cell(hud, 0, 1, "Bias",            text_color=_lbl, text_size=size.small, bgcolor=_tr, text_halign=text.align_right)
