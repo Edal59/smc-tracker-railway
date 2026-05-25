@@ -1,10 +1,10 @@
 """
 TradeX Tracker — Opportunity Intelligence Engine (OIE) Processor
-Version: v17.54
+Version: v17.54.1
 
 Normalizes incoming webhook payloads from TradingView alert() calls into
 clean opportunity records with human-readable decoded fields. Supports
-v17.54 (current, dynamic JSON payloads), v17.25 (plot-based), and legacy formats.
+v17.54.1 (current, dynamic JSON payloads), v17.25 (plot-based), and legacy formats.
 
 Also bridges to the legacy signals pipeline so existing dashboard and
 analytics continue to work seamlessly.
@@ -62,26 +62,26 @@ def calculate_pips(price1: float, price2: float, symbol: str) -> float:
 def detect_version(payload: dict) -> str:
     """Detect the payload format version."""
     version = payload.get("version", "")
-    # v17.54 uses alert() architecture with dynamic JSON payloads
+    # v17.54.1 uses alert() architecture with dynamic JSON payloads
     if version.startswith("v17.5"):
-        return "v17.54"
+        return "v17.54.1"
     if version == "v17.25":
         return "v17.25"
     if version == "v17.14":
         return "v17.14"
     if version == "v17.12.3":
         return "v17.12.3"
-    # Check for v17.54 format by alert field presence
+    # Check for v17.54.1 format by alert field presence
     if "alert" in payload and version:
-        return "v17.54"
+        return "v17.54.1"
     # Check for compact format (existing tracker format)
     if "e" in payload and "id" in payload:
         return "compact"
     return "legacy"
 
 
-# ── v17.54 alert type normalization ──
-# v17.54 Pine Script uses alert() with dynamic JSON payloads.
+# ── v17.54.1 alert type normalization ──
+# v17.54.1 Pine Script uses alert() with dynamic JSON payloads.
 # Alert types come as: "A+ SNIPER BUY", "A+ SNIPER SELL", "RETRACE LONG", etc.
 # Legacy underscore forms ("A_PLUS_SNIPER_BUY", "RETRACE_LONG") kept for backward compat.
 _V17_54_ALERT_MAP = {
@@ -106,15 +106,15 @@ _V17_54_ALERT_MAP = {
 
 def normalize_v17_54_payload(payload: dict) -> dict:
     """
-    Normalize a v17.54 dynamic JSON payload into the standard OIE format.
+    Normalize a v17.54.1 dynamic JSON payload into the standard OIE format.
 
-    v17.54 payloads look like:
-        {"version":"v17.54","alert":"A+ SNIPER BUY","symbol":"GBPUSD",
-         "timeframe":"5","price":"1.34195","message":"v17.54 A+ SNIPER BUY - Aligned with Trend. Target 1:3 RR."}
+    v17.54.1 payloads look like:
+        {"version":"v17.54.1","alert":"A+ SNIPER BUY","symbol":"GBPUSD",
+         "timeframe":"5","price":"1.34195","message":"v17.54.1 A+ SNIPER BUY - Aligned with Trend. Target 1:3 RR."}
 
     or with subtype:
-        {"version":"v17.54","alert":"RETRACE LONG","subtype":"standard",
-         "symbol":"AUDUSD","timeframe":"5","price":"0.71281","message":"v17.54 RETRACE LONG"}
+        {"version":"v17.54.1","alert":"RETRACE LONG","subtype":"standard",
+         "symbol":"AUDUSD","timeframe":"5","price":"0.71281","message":"v17.54.1 RETRACE LONG"}
     """
     alert_raw = payload.get("alert", "")
     setup_type = _V17_54_ALERT_MAP.get(alert_raw.upper().strip(), alert_raw.lower().replace(" ", "_"))
@@ -125,7 +125,7 @@ def normalize_v17_54_payload(payload: dict) -> dict:
     subtype = payload.get("subtype", "")
     message = payload.get("message", "")
 
-    # v17.54 dynamic payloads provide entry price at {{close}}
+    # v17.54.1 dynamic payloads provide entry price at {{close}}
     # SL/TP are estimated with standard R:R ratios since they're not in the payload
     is_long = "long" in setup_type or "buy" in setup_type
     pip_mult = 0.01 if any(x in symbol for x in ('JPY', 'XAU')) else 0.0001
@@ -153,7 +153,7 @@ def normalize_v17_54_payload(payload: dict) -> dict:
         "entry_price": price,
         "stop_loss": sl,
         "take_profit": tp,
-        "version": payload.get("version", "v17.54"),
+        "version": payload.get("version", "v17.54.1"),
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "timeframe": timeframe,
         "subtype": subtype,
@@ -176,12 +176,12 @@ def is_oie_payload(payload: dict) -> bool:
     Determine if a payload is an OIE v17.14+ format vs legacy compact/full format.
 
     OIE payloads have:
-    - v17.54+: 'alert' field with version starting with 'v17.5'
+    - v17.54.1+: 'alert' field with version starting with 'v17.5'
     - v17.25/v17.14: 'type' field like 'sniper_long', 'sniper_short', etc.
     """
     version = payload.get("version", "")
 
-    # v17.54 dynamic JSON format (alert() architecture)
+    # v17.54.1 dynamic JSON format (alert() architecture)
     if "alert" in payload and version.startswith("v17.5"):
         return True
 
@@ -213,19 +213,19 @@ def validate_oie_payload(payload: dict) -> tuple:
     Validate a raw OIE webhook payload for required fields.
     Returns: (is_valid: bool, error_message: str)
 
-    Supports both v17.54 (alert field) and v17.25 (type field) formats.
+    Supports both v17.54.1 (alert field) and v17.25 (type field) formats.
     """
     if not payload or not isinstance(payload, dict):
         return False, "Empty or invalid payload"
 
-    # v17.54 uses 'alert' field, v17.25 uses 'type' field
+    # v17.54.1 uses 'alert' field, v17.25 uses 'type' field
     if not payload.get("type") and not payload.get("alert"):
         return False, "Missing required field: type or alert"
 
     if not payload.get("symbol") and not payload.get("ticker"):
         return False, "Missing required field: symbol"
 
-    # v17.54 uses 'price' (from {{close}}), v17.25 uses entry_price/suggested_entry
+    # v17.54.1 uses 'price' (from {{close}}), v17.25 uses entry_price/suggested_entry
     has_entry = any(payload.get(k) is not None for k in
                     ("entry_price", "suggested_entry", "entry", "price"))
     if not has_entry:
@@ -244,7 +244,7 @@ def normalize_oie_payload(payload: dict) -> dict:
     with decoded categorical fields, ready for DB insertion.
 
     Handles:
-    - v17.54 dynamic JSON payloads (alert() architecture with {{close}} price)
+    - v17.54.1 dynamic JSON payloads (alert() architecture with {{close}} price)
     - v17.25 Sniper alerts (entry_price, stop_loss, take_profit)
     - v17.25 Retrace alerts (suggested_entry, target_sl, target_tp)
     - v17.14 format (without kill_zone)
@@ -259,8 +259,8 @@ def normalize_oie_payload(payload: dict) -> dict:
 
     version = detect_version(payload)
 
-    # v17.54 dynamic JSON: normalize into standard format first
-    if version == "v17.54" and "alert" in payload:
+    # v17.54.1 dynamic JSON: normalize into standard format first
+    if version.startswith("v17.5") and "alert" in payload:
         payload = normalize_v17_54_payload(payload)
 
     setup_type = payload.get("type", "unknown")
@@ -268,7 +268,7 @@ def normalize_oie_payload(payload: dict) -> dict:
     symbol = symbol.upper().strip()
 
     # --- Extract price levels ---
-    # Support v17.54 (entry_price from normalization), v17.25, and v17.14 field names
+    # Support v17.54.1 (entry_price from normalization), v17.25, and v17.14 field names
     if is_sniper_payload(payload):
         entry_price = _to_float(payload.get("entry_price") or payload.get("entry"))
         sl_price = _to_float(payload.get("stop_loss") or payload.get("sl"))
@@ -336,7 +336,7 @@ def normalize_oie_payload(payload: dict) -> dict:
 
 def oie_to_legacy_compact(payload: dict) -> dict:
     """
-    Convert an OIE v17.54/v17.25 payload into the compact format that the existing
+    Convert an OIE v17.54.1/v17.25 payload into the compact format that the existing
     processor.py understands, so it also gets recorded in the signals table
     for backward compatibility with dashboard/analytics.
 
@@ -380,7 +380,7 @@ def oie_to_legacy_compact(payload: dict) -> dict:
         "ps": _to_int(payload.get("poi", 0)),
         "rr": 3.0,
         "t": ts,
-        "v": payload.get("version", "v17.54").replace("v", ""),
+        "v": payload.get("version", "v17.54.1").replace("v", ""),
         "h4": "BU" if decode_h4_bias(payload.get("h4_bias", 0)) == "Bullish" else "BE",
         "z": {"Premium": "P", "Discount": "D", "Equilibrium": "E"}.get(
             decode_pd_zone(payload.get("p_d_zone") or payload.get("pd_zone") or payload.get("zone", 0)),

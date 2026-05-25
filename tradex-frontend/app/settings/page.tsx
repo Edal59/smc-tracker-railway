@@ -37,9 +37,9 @@ export default async function SettingsPage() {
 
           {/* Alert Templates */}
           <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-6">
-            <h2 className="text-lg font-semibold mb-4">v17.54 Alert Templates</h2>
+            <h2 className="text-lg font-semibold mb-4">v17.54.1 Alert Templates</h2>
             <p className="text-sm text-zinc-400 mb-4">
-              v17.54 uses the <strong>alert() architecture</strong> with dynamic JSON payloads.
+              v17.54.1 uses the <strong>alert() architecture</strong> with dynamic JSON payloads.
               No more <code className="text-emerald-400">{"{{plot_X}}"}</code> placeholders &mdash; each alert
               fires a clean JSON with <code className="text-emerald-400">{"{{ticker}}"}</code>,{" "}
               <code className="text-emerald-400">{"{{interval}}"}</code>, and{" "}
@@ -47,7 +47,7 @@ export default async function SettingsPage() {
             </p>
 
             <p className="text-xs text-amber-300 mb-4">
-              <strong>v17.54 alert() setup:</strong> In TradingView, select the alert type from the
+              <strong>v17.54.1 alert() setup:</strong> In TradingView, select the alert type from the
               Condition dropdown (Sniper Long, Sniper Short, Retrace Long, Retrace Short).
               The message body is auto-populated by the indicator. Just ensure the webhook URL is set.
             </p>
@@ -55,22 +55,22 @@ export default async function SettingsPage() {
             <div className="space-y-4">
               <div>
                 <h3 className="text-sm font-semibold text-emerald-400 mb-2">⊕ 1. A+ Sniper Buy (Long)</h3>
-                <pre className="rounded-md border border-zinc-700 bg-zinc-800 p-4 text-xs font-mono text-zinc-300 overflow-x-auto">{`{"version":"v17.54","alert":"A_PLUS_SNIPER_BUY","symbol":"{{ticker}}","timeframe":"{{interval}}","price":"{{close}}","message":"v17.54 A+ SNIPER BUY - Aligned with Trend. Target 1:3 RR."}`}</pre>
+                <pre className="rounded-md border border-zinc-700 bg-zinc-800 p-4 text-xs font-mono text-zinc-300 overflow-x-auto">{`{"version":"v17.54.1","alert":"A_PLUS_SNIPER_BUY","symbol":"{{ticker}}","timeframe":"{{interval}}","price":"{{close}}","message":"v17.54.1 A+ SNIPER BUY - Aligned with Trend. Target 1:3 RR."}`}</pre>
               </div>
 
               <div>
                 <h3 className="text-sm font-semibold text-red-400 mb-2">⊖ 2. A+ Sniper Sell (Short)</h3>
-                <pre className="rounded-md border border-zinc-700 bg-zinc-800 p-4 text-xs font-mono text-zinc-300 overflow-x-auto">{`{"version":"v17.54","alert":"A_PLUS_SNIPER_SELL","symbol":"{{ticker}}","timeframe":"{{interval}}","price":"{{close}}","message":"v17.54 A+ SNIPER SELL - Aligned with Trend. Target 1:3 RR."}`}</pre>
+                <pre className="rounded-md border border-zinc-700 bg-zinc-800 p-4 text-xs font-mono text-zinc-300 overflow-x-auto">{`{"version":"v17.54.1","alert":"A_PLUS_SNIPER_SELL","symbol":"{{ticker}}","timeframe":"{{interval}}","price":"{{close}}","message":"v17.54.1 A+ SNIPER SELL - Aligned with Trend. Target 1:3 RR."}`}</pre>
               </div>
 
               <div>
                 <h3 className="text-sm font-semibold text-amber-400 mb-2">↩ 3. Retrace Long</h3>
-                <pre className="rounded-md border border-zinc-700 bg-zinc-800 p-4 text-xs font-mono text-zinc-300 overflow-x-auto">{`{"version":"v17.54","alert":"RETRACE_LONG","subtype":"standard","symbol":"{{ticker}}","timeframe":"{{interval}}","price":"{{close}}","message":"v17.54 RETRACE LONG - Target: EQ Line."}`}</pre>
+                <pre className="rounded-md border border-zinc-700 bg-zinc-800 p-4 text-xs font-mono text-zinc-300 overflow-x-auto">{`{"version":"v17.54.1","alert":"RETRACE_LONG","subtype":"standard","symbol":"{{ticker}}","timeframe":"{{interval}}","price":"{{close}}","message":"v17.54.1 RETRACE LONG - Target: EQ Line."}`}</pre>
               </div>
 
               <div>
                 <h3 className="text-sm font-semibold text-amber-400 mb-2">↪ 4. Retrace Short</h3>
-                <pre className="rounded-md border border-zinc-700 bg-zinc-800 p-4 text-xs font-mono text-zinc-300 overflow-x-auto">{`{"version":"v17.54","alert":"RETRACE_SHORT","subtype":"standard","symbol":"{{ticker}}","timeframe":"{{interval}}","price":"{{close}}","message":"v17.54 RETRACE SHORT - Target: EQ Line."}`}</pre>
+                <pre className="rounded-md border border-zinc-700 bg-zinc-800 p-4 text-xs font-mono text-zinc-300 overflow-x-auto">{`{"version":"v17.54.1","alert":"RETRACE_SHORT","subtype":"standard","symbol":"{{ticker}}","timeframe":"{{interval}}","price":"{{close}}","message":"v17.54.1 RETRACE SHORT - Target: EQ Line."}`}</pre>
               </div>
             </div>
           </div>
@@ -165,7 +165,7 @@ export default async function SettingsPage() {
               <div><span className="text-blue-400">GET</span> /api/v1/signals</div>
               <div><span className="text-blue-400">GET</span> /api/v1/metrics</div>
               <div><span className="text-blue-400">GET</span> /api/v1/pnl</div>
-              <div className="text-zinc-500 font-sans font-semibold text-xs mt-2 mb-1">OIE v17.54</div>
+              <div className="text-zinc-500 font-sans font-semibold text-xs mt-2 mb-1">OIE v17.54.1</div>
               <div><span className="text-blue-400">GET</span> /api/v1/opportunities</div>
               <div><span className="text-blue-400">GET</span> /api/v1/opportunities/summary</div>
               <div><span className="text-blue-400">GET</span> /api/v1/opportunities/:id</div>
