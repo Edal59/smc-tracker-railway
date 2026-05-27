@@ -2,7 +2,7 @@
 """
 SMC Performance Tracker — Webhook Test Script
 ==============================================
-Sends test v17.54.2 alerts to the live Railway endpoint and displays results.
+Sends test v17.54.3 alerts to the live Railway endpoint and displays results.
 
 Usage:
     python3 scripts/test_webhook.py                    # Run all default tests
@@ -35,54 +35,54 @@ DEFAULT_API_KEY = "3mrirFh5Q7-jwpBDPVUh1dU7ZFsXk1h-"
 # ── Test Payloads ──────────────────────────────────────────────
 TEST_ALERTS = {
     "A+ SNIPER BUY": {
-        "version": "v17.54.2",
+        "version": "v17.54.3",
         "alert": "A+ SNIPER BUY",
         "symbol": "BTCUSD",
         "timeframe": "240",
         "price": "68500.00",
-        "message": "v17.54.2 A+ SNIPER BUY - Aligned with Trend. Target 1:3 RR."
+        "message": "v17.54.3 A+ SNIPER BUY - Aligned with Trend. Target 1:3 RR."
     },
     "A+ SNIPER SELL": {
-        "version": "v17.54.2",
+        "version": "v17.54.3",
         "alert": "A+ SNIPER SELL",
         "symbol": "EURUSD",
         "timeframe": "60",
         "price": "1.08750",
-        "message": "v17.54.2 A+ SNIPER SELL - Aligned with Trend. Target 1:3 RR."
+        "message": "v17.54.3 A+ SNIPER SELL - Aligned with Trend. Target 1:3 RR."
     },
     "RETRACE LONG": {
-        "version": "v17.54.2",
+        "version": "v17.54.3",
         "alert": "RETRACE LONG",
         "subtype": "standard",
         "symbol": "GBPUSD",
         "timeframe": "15",
         "price": "1.27450",
-        "message": "v17.54.2 RETRACE LONG - Target: EQ Line."
+        "message": "v17.54.3 RETRACE LONG - Target: EQ Line."
     },
     "RETRACE SHORT": {
-        "version": "v17.54.2",
+        "version": "v17.54.3",
         "alert": "RETRACE SHORT",
         "subtype": "standard",
         "symbol": "AUDUSD",
         "timeframe": "5",
         "price": "0.66120",
-        "message": "v17.54.2 RETRACE SHORT - Target: EQ Line."
+        "message": "v17.54.3 RETRACE SHORT - Target: EQ Line."
     },
     "COUNTER BUY": {
-        "version": "v17.54.2",
+        "version": "v17.54.3",
         "alert": "COUNTER BUY",
         "symbol": "XAUUSD",
         "timeframe": "60",
         "price": "2365.50",
-        "message": "v17.54.2 COUNTER BUY - Counter-trend entry."
+        "message": "v17.54.3 COUNTER BUY - Counter-trend entry."
     },
     "COUNTER SELL": {
-        "version": "v17.54.2",
+        "version": "v17.54.3",
         "alert": "COUNTER SELL",
         "symbol": "USDJPY",
         "timeframe": "240",
         "price": "157.250",
-        "message": "v17.54.2 COUNTER SELL - Counter-trend entry."
+        "message": "v17.54.3 COUNTER SELL - Counter-trend entry."
     },
 }
 
@@ -156,7 +156,7 @@ def print_result(result: dict):
         if isinstance(resp, dict):
             # Highlight key fields
             if resp.get("pipeline") == "oie":
-                print(f"     Pipeline:       OIE (v17.54.2)")
+                print(f"     Pipeline:       OIE (v17.54.3)")
                 print(f"     Opportunity ID: {resp.get('opportunity_id')}")
                 print(f"     Setup Type:     {resp.get('setup_type')}")
                 print(f"     Pair:           {resp.get('pair')}")
@@ -171,7 +171,7 @@ def print_result(result: dict):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Test SMC webhook with v17.54.2 alerts")
+    parser = argparse.ArgumentParser(description="Test SMC webhook with v17.54.3 alerts")
     parser.add_argument("--url", default=os.environ.get("WEBHOOK_URL", DEFAULT_URL),
                         help="Webhook endpoint URL")
     parser.add_argument("--api-key", default=os.environ.get("SMC_API_KEY", DEFAULT_API_KEY),

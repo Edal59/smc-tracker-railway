@@ -72,7 +72,7 @@ def health_check():
     return jsonify({
         'status': 'ok',
         'service': 'SMC Performance Tracker',
-        'version': 'v17.54.2',
+        'version': 'v17.54.3',
     })
 
 
@@ -153,7 +153,7 @@ def receive_signal():
         return jsonify({
             "status": "ok",
             "message": "SMC Performance Tracker Webhook Endpoint",
-            "version": "v17.54.2",
+            "version": "v17.54.3",
             "accepts": "POST",
             "endpoint": "/api/v1/signal"
         }), 200

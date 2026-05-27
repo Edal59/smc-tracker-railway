@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Setup Guide — TradeX OIE v17.54.2{% endblock %}
+{% block title %}Setup Guide — TradeX OIE v17.54.3{% endblock %}
 
 {% block content %}
 <div class="row g-4">
@@ -33,12 +33,12 @@
         <!-- Alert Template -->
         <div class="card mt-3">
             <div class="card-header">
-                <i class="bi bi-code-square me-1"></i> v17.54.2 OIE Alert Message Templates
+                <i class="bi bi-code-square me-1"></i> v17.54.3 OIE Alert Message Templates
             </div>
             <div class="card-body">
                 <p class="text-muted small">
-                    <span class="badge bg-info">v17.54.2</span>
-                    The SMC Premium/Discount Confluence Engine v17.54.2 uses the <strong>alert() architecture</strong>
+                    <span class="badge bg-info">v17.54.3</span>
+                    The SMC Premium/Discount Confluence Engine v17.54.3 uses the <strong>alert() architecture</strong>
                     with dynamic JSON payloads. No more <code>{{ "{{plot_X}}" }}</code> placeholders &mdash; each alert
                     fires a clean JSON payload with <code>{{ "{{ticker}}" }}</code>, <code>{{ "{{interval}}" }}</code>,
                     and <code>{{ "{{close}}" }}</code> TradingView variables.
@@ -46,37 +46,37 @@
 
                 <p class="small text-warning mb-3">
                     <i class="bi bi-info-circle me-1"></i>
-                    <strong>v17.54.2 alert() setup:</strong> In TradingView, select the alert type from the
+                    <strong>v17.54.3 alert() setup:</strong> In TradingView, select the alert type from the
                     <em>Condition</em> dropdown (Sniper Long, Sniper Short, Retrace Long, Retrace Short).
                     The message body is auto-populated by the indicator. Just ensure the webhook URL is set.
                 </p>
 
                 <h6><i class="bi bi-crosshair me-1"></i> 1. A+ Sniper Buy (Long):</h6>
-                <pre class="bg-dark border rounded p-3" id="sniper-long-template">{"version":"v17.54.2","alert":"A_PLUS_SNIPER_BUY","symbol":"{{ "{{ticker}}" }}","timeframe":"{{ "{{interval}}" }}","price":"{{ "{{close}}" }}","message":"v17.54.2 A+ SNIPER BUY - Aligned with Trend. Target 1:3 RR."}</pre>
+                <pre class="bg-dark border rounded p-3" id="sniper-long-template">{"version":"v17.54.3","alert":"A_PLUS_SNIPER_BUY","symbol":"{{ "{{ticker}}" }}","timeframe":"{{ "{{interval}}" }}","price":"{{ "{{close}}" }}","message":"v17.54.3 A+ SNIPER BUY - Aligned with Trend. Target 1:3 RR."}</pre>
                 <button class="btn btn-sm btn-outline-info mb-3" onclick="copyEl('sniper-long-template')">
                     <i class="bi bi-clipboard"></i> Copy A+ Sniper Buy Template
                 </button>
 
                 <h6><i class="bi bi-crosshair me-1"></i> 2. A+ Sniper Sell (Short):</h6>
-                <pre class="bg-dark border rounded p-3" id="sniper-short-template">{"version":"v17.54.2","alert":"A_PLUS_SNIPER_SELL","symbol":"{{ "{{ticker}}" }}","timeframe":"{{ "{{interval}}" }}","price":"{{ "{{close}}" }}","message":"v17.54.2 A+ SNIPER SELL - Aligned with Trend. Target 1:3 RR."}</pre>
+                <pre class="bg-dark border rounded p-3" id="sniper-short-template">{"version":"v17.54.3","alert":"A_PLUS_SNIPER_SELL","symbol":"{{ "{{ticker}}" }}","timeframe":"{{ "{{interval}}" }}","price":"{{ "{{close}}" }}","message":"v17.54.3 A+ SNIPER SELL - Aligned with Trend. Target 1:3 RR."}</pre>
                 <button class="btn btn-sm btn-outline-info mb-3" onclick="copyEl('sniper-short-template')">
                     <i class="bi bi-clipboard"></i> Copy A+ Sniper Sell Template
                 </button>
 
                 <h6><i class="bi bi-arrow-return-right me-1"></i> 3. Retrace Long:</h6>
-                <pre class="bg-dark border rounded p-3" id="retrace-long-template">{"version":"v17.54.2","alert":"RETRACE_LONG","subtype":"standard","symbol":"{{ "{{ticker}}" }}","timeframe":"{{ "{{interval}}" }}","price":"{{ "{{close}}" }}","message":"v17.54.2 RETRACE LONG - Target: EQ Line."}</pre>
+                <pre class="bg-dark border rounded p-3" id="retrace-long-template">{"version":"v17.54.3","alert":"RETRACE_LONG","subtype":"standard","symbol":"{{ "{{ticker}}" }}","timeframe":"{{ "{{interval}}" }}","price":"{{ "{{close}}" }}","message":"v17.54.3 RETRACE LONG - Target: EQ Line."}</pre>
                 <button class="btn btn-sm btn-outline-info mb-3" onclick="copyEl('retrace-long-template')">
                     <i class="bi bi-clipboard"></i> Copy Retrace Long Template
                 </button>
 
                 <h6><i class="bi bi-arrow-return-left me-1"></i> 4. Retrace Short:</h6>
-                <pre class="bg-dark border rounded p-3" id="retrace-short-template">{"version":"v17.54.2","alert":"RETRACE_SHORT","subtype":"standard","symbol":"{{ "{{ticker}}" }}","timeframe":"{{ "{{interval}}" }}","price":"{{ "{{close}}" }}","message":"v17.54.2 RETRACE SHORT - Target: EQ Line."}</pre>
+                <pre class="bg-dark border rounded p-3" id="retrace-short-template">{"version":"v17.54.3","alert":"RETRACE_SHORT","subtype":"standard","symbol":"{{ "{{ticker}}" }}","timeframe":"{{ "{{interval}}" }}","price":"{{ "{{close}}" }}","message":"v17.54.3 RETRACE SHORT - Target: EQ Line."}</pre>
                 <button class="btn btn-sm btn-outline-info mb-3" onclick="copyEl('retrace-short-template')">
                     <i class="bi bi-clipboard"></i> Copy Retrace Short Template
                 </button>
 
                 <hr>
-                <h6><i class="bi bi-key me-1"></i> Decode Reference (v17.54.2):</h6>
+                <h6><i class="bi bi-key me-1"></i> Decode Reference (v17.54.3):</h6>
                 <div class="row g-2 small">
                     <div class="col-md-3">
                         <strong>H4 Bias</strong><br>
@@ -146,7 +146,7 @@
                     <tr><td class="text-muted">Auth Required</td><td>{{ 'Yes' if config.require_auth else 'No' }}</td></tr>
                     <tr><td class="text-muted">API Key Set</td><td>{{ 'Yes ✓' if config.api_key else 'No ⚠️' }}</td></tr>
                     <tr><td class="text-muted">Price Tracker</td><td>{{ 'Enabled' if config.price_tracker_enabled else 'Disabled' }}</td></tr>
-                    <tr><td class="text-muted">Version</td><td><span class="badge bg-info">v17.54.2</span> OIE</td></tr>
+                    <tr><td class="text-muted">Version</td><td><span class="badge bg-info">v17.54.3</span> OIE</td></tr>
                 </table>
             </div>
         </div>
@@ -166,7 +166,7 @@
                 <code>GET  /api/v1/report</code> — Full JSON report<br>
                 <code>GET  /api/v1/export/csv</code> — CSV export<br>
                 <hr class="my-2">
-                <strong class="text-success">OIE v17.54.2</strong><br>
+                <strong class="text-success">OIE v17.54.3</strong><br>
                 <code>GET  /api/v1/opportunities</code> — List opps<br>
                 <code>GET  /api/v1/opportunities/&lt;id&gt;</code> — Detail<br>
                 <code>GET  /api/v1/opportunities/summary</code> — Summary<br>
