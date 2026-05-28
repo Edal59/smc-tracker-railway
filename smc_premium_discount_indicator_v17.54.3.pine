@@ -21,7 +21,7 @@ indicator("SMC Premium/Discount Confluence Engine v17.54.3", shorttitle="SMC PD 
 //   - Three variants: standard (size.small), header (size.normal), debug (size.tiny)
 //
 // SAFETY 3: Hard limit constants
-//   - maxHudRows = 22, maxHudCols = 2 (matches actual table grid)
+//   - maxHudRows = 21, maxHudCols = 2 (exact fit for 21-row HUD, see Row Map)
 //   - All cell writes validated against these limits
 //
 // SAFETY 4: HUD initialization guard (reinforced from v17.54.2)
@@ -636,6 +636,7 @@ grpH4 = "📈 H4 Multi-TF Bias"
 showH4Zones       = input.bool(true, "Show H4 P&D Zones", group=grpH4)
 showInvalidation  = input.bool(true, "Show Invalidation in H4 Bias", group=grpH4)
 neutralZoneWidth  = input.float(0.0, "Neutral Zone Width (%)", minval=0.0, maxval=50.0, group=grpH4, tooltip="Controls the EQ (equilibrium) zone width as % of total range.\n0.0 = classic 50/50 split (Premium above EQ, Discount below EQ).\n33.3 = thirds (PZ top 1/3, EQ middle 1/3, DZ bottom 1/3).\n10 = narrow EQ band.")
+pdCryptoMode      = input.bool(false, "Crypto Mode", group=grpH4, tooltip="v17.54.3: When enabled, adjusts pip sizing and zone calculations for cryptocurrency pairs.\nLeave disabled for Forex.")
 
 // --- Zone Range Configuration (v17.11) ---
 grpZoneRange = "📐 Zone Range Settings"
@@ -745,31 +746,54 @@ hudW(condition, trueVal, falseVal) =>
 // ============================================================================
 // v17.54.3 HUD SAFETY FUNCTIONS — Prevent na crashes & out-of-bounds errors
 // ============================================================================
-
-// Hard limit constants — match actual HUD table grid (2 cols × 22 rows)
-int maxHudRows = 22
+//
+// HUD Row Map (21 rows, 0-indexed):
+//   Row  0: Header    — "SMC P&D" / version badge
+//   Row  1: Bias      — H4 P&D bias (Bullish/Bearish/Neutral)
+//   Row  2: Align     — Trend alignment status
+//   Row  3: KZ        — Kill Zone status
+//   Row  4: Sniper    — Sniper signal progress
+//   Row  5: POI       — Point of Interest status
+//   Row  6: Momentum  — Momentum direction
+//   Row  7: Guardian  — Guardian filter status
+//   Row  8: Confl     — Confluence score
+//   Row  9: AMD       — AMD phase
+//   Row 10: Trade     — Trade context
+//   Row 11: Entry     — Entry mode
+//   Row 12: Action    — Action step + plan
+//   Row 13: Stage     — Signal stage
+//   Row 14: Alert     — Last alert type
+//   Row 15: Signals   — Signals today count
+//   Row 16: Levels    — Session levels
+//   Row 17: ZoneCfg   — [debug] Zone configuration
+//   Row 18: ZoneHt    — [debug] Zone height / cap status
+//   Row 19: ZoneSt    — [debug] Zone boolean states
+//   Row 20: Ratio     — [debug] Zone ratio check
+//
+// Hard limit constants — exact fit for 21 rows × 2 columns
+int maxHudRows = 21
 int maxHudCols = 2
 
 // Safe text wrapper — prevents na value crashes in HUD cell text
-// Returns "—" for na/null values, returns the string itself for valid values
+// Returns "—" for na/null values, str.tostring() for valid values (defensive cast)
 f_safeText(string val) =>
-    na(val) ? "—" : val
+    na(val) ? "—" : str.tostring(val)
 
 // Safe cell writer — standard rows (size.small, auto-alignment by column)
-// Checks: table not na, column in bounds, row in bounds
+// Guards: not na(_table) and _col >= 0 and _row >= 0 and _col < maxHudCols and _row < maxHudRows
 // Col 0 = right-aligned labels, Col 1 = left-aligned values
 f_setCell(table _t, int _col, int _row, string _text, color _txtColor, color _bgColor) =>
-    if not na(_t) and _col >= 0 and _col < maxHudCols and _row >= 0 and _row < maxHudRows
+    if not na(_t) and _col >= 0 and _row >= 0 and _col < maxHudCols and _row < maxHudRows
         table.cell(_t, _col, _row, _text, text_color=_txtColor, text_size=size.small, bgcolor=_bgColor, text_halign=_col == 0 ? text.align_right : text.align_left)
 
 // Safe cell writer — header rows (size.normal for prominence)
 f_setHdrCell(table _t, int _col, int _row, string _text, color _txtColor, color _bgColor) =>
-    if not na(_t) and _col >= 0 and _col < maxHudCols and _row >= 0 and _row < maxHudRows
+    if not na(_t) and _col >= 0 and _row >= 0 and _col < maxHudCols and _row < maxHudRows
         table.cell(_t, _col, _row, _text, text_color=_txtColor, text_size=size.normal, bgcolor=_bgColor, text_halign=_col == 0 ? text.align_right : text.align_left)
 
 // Safe cell writer — debug rows (size.tiny for compact diagnostics)
 f_setDbgCell(table _t, int _col, int _row, string _text, color _txtColor, color _bgColor) =>
-    if not na(_t) and _col >= 0 and _col < maxHudCols and _row >= 0 and _row < maxHudRows
+    if not na(_t) and _col >= 0 and _row >= 0 and _col < maxHudCols and _row < maxHudRows
         table.cell(_t, _col, _row, _text, text_color=_txtColor, text_size=size.tiny, bgcolor=_bgColor, text_halign=_col == 0 ? text.align_right : text.align_left)
 
 // --- ATR calculation ---
@@ -777,7 +801,7 @@ atrLen = 14
 atrValue = ta.atr(atrLen)
 
 // --- Pip size detection ---
-pipSize = syminfo.mintick * (str.contains(syminfo.ticker, "JPY") ? 100 : (syminfo.type == "crypto" ? 1 : 10))
+pipSize = syminfo.mintick * (str.contains(syminfo.ticker, "JPY") ? 100 : (pdCryptoMode or syminfo.type == "crypto" ? 1 : 10))
 
 // --- Time helpers ---
 estHour = hour(time, "America/New_York")
@@ -2412,6 +2436,11 @@ var string last_alert_type     = ""
 var int    last_alert_time     = 0
 var string last_alert_setup_id = ""
 
+// v17.54.3: Tracker counters — persist across refreshes (var)
+var int sniperTrades    = 0   // Total sniper signals fired (long + short)
+var int activeTrades    = 0   // Currently active trade count (placeholder for state machine)
+var int totalAlertsFired = 0  // Total alerts fired across all types
+
 // ---- Cooldown Check Function (v17.14 HARDENED) ----
 // Returns true ONLY if enough bars have elapsed AND the setup has changed.
 // v17.13 used OR (setup change bypassed cooldown) — caused spam on history.
@@ -2473,6 +2502,8 @@ if fire_sniper_long
     last_alert_type           := "SNIPER LONG"
     last_alert_time           := time
     last_alert_setup_id       := current_display_id  // v17.14: display_id for HUD
+    sniperTrades    += 1  // v17.54.3: tracker counter
+    totalAlertsFired += 1
 
 if fire_sniper_short
     setup_id_last_sniper_short := current_setup_id
@@ -2480,6 +2511,8 @@ if fire_sniper_short
     last_alert_type            := "SNIPER SHORT"
     last_alert_time            := time
     last_alert_setup_id        := current_display_id  // v17.14: display_id for HUD
+    sniperTrades    += 1  // v17.54.3: tracker counter
+    totalAlertsFired += 1
 
 if fire_retrace_long
     setup_id_last_retrace_long := current_setup_id
@@ -2487,6 +2520,7 @@ if fire_retrace_long
     last_alert_type            := "RETRACE LONG"
     last_alert_time            := time
     last_alert_setup_id        := current_display_id  // v17.14: display_id for HUD
+    totalAlertsFired += 1  // v17.54.3: tracker counter
 
 if fire_retrace_short
     setup_id_last_retrace_short := current_setup_id
@@ -2494,6 +2528,7 @@ if fire_retrace_short
     last_alert_type             := "RETRACE SHORT"
     last_alert_time             := time
     last_alert_setup_id         := current_display_id  // v17.14: display_id for HUD
+    totalAlertsFired += 1  // v17.54.3: tracker counter
 
 // ---- P1 Debug Mode: Single reused label for most recent alert (v17.14) ----
 // v17.14 FIX: Uses var+delete pattern — only ONE label exists at any time.
