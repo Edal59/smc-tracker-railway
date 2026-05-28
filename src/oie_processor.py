@@ -1,6 +1,6 @@
 """
 TradeX Tracker — Opportunity Intelligence Engine (OIE) Processor
-Version: v17.54.3
+Version: v17.54.2
 
 Normalizes incoming webhook payloads from TradingView alert() calls into
 clean opportunity records with human-readable decoded fields. Supports
@@ -63,9 +63,9 @@ def detect_version(payload: dict) -> str:
     """Detect the payload format version."""
     version = payload.get("version", "")
     # v17.54.x uses alert() architecture with dynamic JSON payloads
-    # Supports v17.54.1, v17.54.3, and any future v17.5x patches
+    # Supports v17.54.1, v17.54.2, and any future v17.5x patches
     if version.startswith("v17.5"):
-        return version  # Preserve actual version (v17.54.1, v17.54.3, etc.)
+        return version  # Preserve actual version (v17.54.1, v17.54.2, etc.)
     if version == "v17.25":
         return "v17.25"
     if version == "v17.14":
@@ -74,7 +74,7 @@ def detect_version(payload: dict) -> str:
         return "v17.12.3"
     # Check for v17.54.x format by alert field presence
     if "alert" in payload and version:
-        return version if version.startswith("v17") else "v17.54.3"
+        return version if version.startswith("v17") else "v17.54.2"
     # Check for compact format (existing tracker format)
     if "e" in payload and "id" in payload:
         return "compact"
@@ -110,12 +110,12 @@ def normalize_v17_54_payload(payload: dict) -> dict:
     Normalize a v17.54.x dynamic JSON payload into the standard OIE format.
 
     v17.54.x payloads look like:
-        {"version":"v17.54.3","alert":"A+ SNIPER BUY","symbol":"GBPUSD",
-         "timeframe":"5","price":"1.34195","message":"v17.54.3 A+ SNIPER BUY - Aligned with Trend. Target 1:3 RR."}
+        {"version":"v17.54.2","alert":"A+ SNIPER BUY","symbol":"GBPUSD",
+         "timeframe":"5","price":"1.34195","message":"v17.54.2 A+ SNIPER BUY - Aligned with Trend. Target 1:3 RR."}
 
     or with subtype:
-        {"version":"v17.54.3","alert":"RETRACE LONG","subtype":"standard",
-         "symbol":"AUDUSD","timeframe":"5","price":"0.71281","message":"v17.54.3 RETRACE LONG"}
+        {"version":"v17.54.2","alert":"RETRACE LONG","subtype":"standard",
+         "symbol":"AUDUSD","timeframe":"5","price":"0.71281","message":"v17.54.2 RETRACE LONG"}
     """
     alert_raw = payload.get("alert", "")
     setup_type = _V17_54_ALERT_MAP.get(alert_raw.upper().strip(), alert_raw.lower().replace(" ", "_"))
@@ -154,7 +154,7 @@ def normalize_v17_54_payload(payload: dict) -> dict:
         "entry_price": price,
         "stop_loss": sl,
         "take_profit": tp,
-        "version": payload.get("version", "v17.54.3"),
+        "version": payload.get("version", "v17.54.2"),
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "timeframe": timeframe,
         "subtype": subtype,
@@ -381,7 +381,7 @@ def oie_to_legacy_compact(payload: dict) -> dict:
         "ps": _to_int(payload.get("poi", 0)),
         "rr": 3.0,
         "t": ts,
-        "v": payload.get("version", "v17.54.3").replace("v", ""),
+        "v": payload.get("version", "v17.54.2").replace("v", ""),
         "h4": "BU" if decode_h4_bias(payload.get("h4_bias", 0)) == "Bullish" else "BE",
         "z": {"Premium": "P", "Discount": "D", "Equilibrium": "E"}.get(
             decode_pd_zone(payload.get("p_d_zone") or payload.get("pd_zone") or payload.get("zone", 0)),
