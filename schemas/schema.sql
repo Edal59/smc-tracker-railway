@@ -170,7 +170,7 @@ CREATE TABLE IF NOT EXISTS daily_metrics (
     profit_factor       REAL DEFAULT 0.0,              -- gross_profit / gross_loss
     
     -- Breakdowns (stored as JSON for flexibility)
-    by_poi_score        TEXT,                          -- JSON: {"5/5": {"wins": 10, "total": 12}, ...}
+    by_poi_score        TEXT,                          -- JSON: {"6/6": {"wins": 10, "total": 12}, ...}
     by_entry_model      TEXT,                          -- JSON: {"Disp. Trap": {"wins": 5, "total": 20}, ...}
     by_kill_zone        TEXT,                          -- JSON: {"London KZ": {"wins": 8, "total": 15}, ...}
     by_amd_phase        TEXT,                          -- JSON

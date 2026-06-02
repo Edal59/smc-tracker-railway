@@ -32,24 +32,34 @@ api_bp = Blueprint('api', __name__)
 # ============================================================
 
 def require_api_key(f):
-    """Decorator to require API key authentication."""
+    """Decorator to require API key authentication.
+    v17.56.6: Extended to check query params and Authorization Bearer header.
+    """
     @wraps(f)
     def decorated(*args, **kwargs):
         if not config.require_auth:
             return f(*args, **kwargs)
 
-        # Check for API key in request body first (for TradingView webhooks)
+        # Check for API key in multiple sources
         api_key = ''
+        # Source 1: JSON body
         try:
             body = request.get_json(silent=True)
             if body and isinstance(body, dict):
                 api_key = body.get('api_key', '')
         except Exception:
             pass
-
-        # Fall back to X-API-Key header if not found in body
+        # Source 2: Query parameter
+        if not api_key:
+            api_key = request.args.get('api_key', '')
+        # Source 3: X-API-Key header
         if not api_key:
             api_key = request.headers.get('X-API-Key', '')
+        # Source 4: Authorization Bearer header
+        if not api_key:
+            auth_header = request.headers.get('Authorization', '')
+            if auth_header.startswith('Bearer '):
+                api_key = auth_header[7:].strip()
 
         expected = config.api_key
 
@@ -72,7 +82,7 @@ def health_check():
     return jsonify({
         'status': 'ok',
         'service': 'SMC Performance Tracker',
-        'version': 'v17.54.2',
+        'version': 'v17.56.6',
     })
 
 
@@ -153,27 +163,41 @@ def receive_signal():
         return jsonify({
             "status": "ok",
             "message": "SMC Performance Tracker Webhook Endpoint",
-            "version": "v17.54.2",
+            "version": "v17.56.6",
             "accepts": "POST",
             "endpoint": "/api/v1/signal"
         }), 200
 
     # POST requests: check API key authentication
+    # v17.56.6: Extended auth sources — TradingView webhooks can't send custom headers,
+    # so we support: (1) JSON body api_key/k, (2) query param ?api_key=, (3) X-API-Key header,
+    # (4) Authorization: Bearer header. This fixes 401 errors for TradingView webhooks.
     if config.require_auth:
         api_key = ''
+        # Source 1: JSON body (standard and ultra-simple formats)
         try:
             body = request.get_json(silent=True)
             if body and isinstance(body, dict):
-                # Support both 'api_key' (standard) and 'k' (ultra-simple format)
                 api_key = body.get('api_key', '') or body.get('k', '')
         except Exception:
             pass
+        # Source 2: Query parameter (recommended for TradingView webhooks)
+        if not api_key:
+            api_key = request.args.get('api_key', '')
+        # Source 3: X-API-Key header
         if not api_key:
             api_key = request.headers.get('X-API-Key', '')
+        # Source 4: Authorization Bearer header
+        if not api_key:
+            auth_header = request.headers.get('Authorization', '')
+            if auth_header.startswith('Bearer '):
+                api_key = auth_header[7:].strip()
         expected = config.api_key
         if expected and api_key != expected:
-            logger.warning(f"Unauthorized POST /signal from {request.remote_addr}")
-            return jsonify({'error': 'Unauthorized'}), 401
+            logger.warning(f"Unauthorized POST /signal from {request.remote_addr} "
+                           f"(checked body/query/header, none matched)")
+            return jsonify({'error': 'Unauthorized', 'hint': 'Send api_key in JSON body, '
+                           '?api_key= query param, X-API-Key header, or Authorization: Bearer header'}), 401
 
     data = request.get_json(silent=True)
     if not data:
@@ -203,10 +227,13 @@ def receive_signal():
                        f"RR {opp_record['rr_ratio']}:1",
                        {'opportunity_id': opp_id, 'legacy_signal': legacy_signal_id})
 
+            # v17.56.6: Include OTE bonus in log
+            ote_tag = " (OTE)" if opp_record.get('has_ote') else ""
             logger.info(
                 f"[OIE] ✅ {opp_record['setup_type']} on {opp_record['pair']} "
                 f"| {opp_record['kill_zone']} session | {opp_record['h4_bias']} bias "
                 f"| RR {opp_record['rr_ratio']}:1 | POI {opp_record['poi_score']}"
+                f"/{opp_record.get('poi_max', 6)}{ote_tag}"
             )
 
             return jsonify({
@@ -217,6 +244,9 @@ def receive_signal():
                 'pair': opp_record['pair'],
                 'kill_zone': opp_record['kill_zone'],
                 'rr_ratio': opp_record['rr_ratio'],
+                'poi_score': opp_record['poi_score'],
+                'poi_max': opp_record.get('poi_max', 6),
+                'has_ote': opp_record.get('has_ote', False),
                 'legacy_signal_id': legacy_signal_id,
             }), 200
 
