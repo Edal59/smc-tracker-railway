@@ -1,6 +1,7 @@
 """
 SMC Performance Tracker — API Routes
 All webhook and REST API endpoints.
+v17.56.7: Dual Mode Alert System + Session Analytics + Zombie Trade Prevention
 """
 import logging
 from datetime import datetime, timezone
@@ -17,7 +18,8 @@ from src.oie_database import (
 )
 from src.database import (
     get_signal, get_signals, get_active_signals, count_signals,
-    get_events, log_system
+    get_events, log_system, get_performance_summary_filtered,
+    get_signals_for_analysis
 )
 from src.analytics.metrics import get_full_metrics, get_cumulative_pnl, get_rolling_win_rate
 from src.analytics.reports import generate_json_report, generate_csv_signals
@@ -82,7 +84,8 @@ def health_check():
     return jsonify({
         'status': 'ok',
         'service': 'SMC Performance Tracker',
-        'version': 'v17.56.6',
+        'version': 'v17.56.7',
+        'features': ['dual_mode', 'session_analytics', 'zombie_prevention', 'invalid_classification'],
     })
 
 
@@ -163,7 +166,7 @@ def receive_signal():
         return jsonify({
             "status": "ok",
             "message": "SMC Performance Tracker Webhook Endpoint",
-            "version": "v17.56.6",
+            "version": "v17.56.7",
             "accepts": "POST",
             "endpoint": "/api/v1/signal"
         }), 200
@@ -203,13 +206,32 @@ def receive_signal():
     if not data:
         return jsonify({'error': 'Invalid JSON payload'}), 400
 
-    # ── v17.54.x / v17.25 OIE format detection ──
-    # v17.54.x: alert() payloads with "alert" field + version "v17.5x"
-    # v17.25: alertcondition() payloads with "type" field + version "v17.14/v17.25"
+    # ── v17.54.x / v17.25 / v17.56.7 OIE format detection ──
     if is_oie_payload(data):
         try:
             # 1. Normalize into opportunity record
             opp_record = normalize_oie_payload(data)
+
+            # ── v17.56.7: Zombie Trade Prevention ──
+            # If valid == False, log as informational event only, don't create trade
+            if not opp_record.get('valid', True):
+                logger.info(
+                    f"[OIE] ⛔ INVALID signal ignored (zombie prevention): "
+                    f"{opp_record['setup_type']} {opp_record['pair']} "
+                    f"| mode={opp_record.get('mode', 'DATA')} "
+                    f"| session={opp_record.get('session_tag', 'NY')}"
+                )
+                log_system('INFO', 'webhook',
+                           f"Zombie prevention: ignored invalid {opp_record['setup_type']} "
+                           f"{opp_record['pair']}",
+                           {'reason': 'valid=false', 'payload': str(data)[:500]})
+                return jsonify({
+                    'status': 'ignored',
+                    'reason': 'invalid signal (valid=false)',
+                    'pair': opp_record['pair'],
+                    'setup_type': opp_record['setup_type'],
+                }), 200
+
             opp_id = insert_opportunity(opp_record)
 
             # 2. Also feed into legacy signals pipeline for backward compat
@@ -224,13 +246,18 @@ def receive_signal():
             log_system('INFO', 'webhook',
                        f"OIE opportunity #{opp_id}: {opp_record['setup_type']} "
                        f"{opp_record['pair']} | {opp_record['kill_zone']} | "
-                       f"RR {opp_record['rr_ratio']}:1",
+                       f"RR {opp_record['rr_ratio']}:1 | "
+                       f"mode={opp_record.get('mode', 'DATA')} | "
+                       f"session={opp_record.get('session_tag', 'NY')}",
                        {'opportunity_id': opp_id, 'legacy_signal': legacy_signal_id})
 
-            # v17.56.6: Include OTE bonus in log
+            # v17.56.6+: Include OTE bonus in log
             ote_tag = " (OTE)" if opp_record.get('has_ote') else ""
+            mode_tag = f" [{opp_record.get('mode', 'DATA')}]"
+            session_tag = f" {opp_record.get('session_tag', 'NY')}"
             logger.info(
-                f"[OIE] ✅ {opp_record['setup_type']} on {opp_record['pair']} "
+                f"[OIE] ✅{mode_tag}{session_tag} {opp_record['setup_type']} on {opp_record['pair']} "
+                f"| {opp_record.get('direction', '?')} "
                 f"| {opp_record['kill_zone']} session | {opp_record['h4_bias']} bias "
                 f"| RR {opp_record['rr_ratio']}:1 | POI {opp_record['poi_score']}"
                 f"/{opp_record.get('poi_max', 6)}{ote_tag}"
@@ -242,11 +269,14 @@ def receive_signal():
                 'opportunity_id': opp_id,
                 'setup_type': opp_record['setup_type'],
                 'pair': opp_record['pair'],
+                'direction': opp_record.get('direction', ''),
                 'kill_zone': opp_record['kill_zone'],
                 'rr_ratio': opp_record['rr_ratio'],
                 'poi_score': opp_record['poi_score'],
                 'poi_max': opp_record.get('poi_max', 6),
                 'has_ote': opp_record.get('has_ote', False),
+                'mode': opp_record.get('mode', 'DATA'),
+                'session': opp_record.get('session_tag', 'NY'),
                 'legacy_signal_id': legacy_signal_id,
             }), 200
 
@@ -292,20 +322,29 @@ def receive_signal():
 @api_bp.route('/signals', methods=['GET'])
 @require_api_key
 def list_signals():
-    """List signals with optional filters."""
+    """List signals with optional filters.
+    v17.56.7: Supports ?mode=EXECUTION&session=NY filters.
+    """
     pair = request.args.get('pair')
     status = request.args.get('status')
+    mode = request.args.get('mode')
+    session_tag = request.args.get('session')
     limit = min(int(request.args.get('limit', 100)), 500)
     offset = int(request.args.get('offset', 0))
 
-    signals = get_signals(pair=pair, status=status, limit=limit, offset=offset)
-    total = count_signals(pair=pair, status=status)
+    signals = get_signals(pair=pair, status=status, mode=mode,
+                          session_tag=session_tag, limit=limit, offset=offset)
+    total = count_signals(pair=pair, status=status, mode=mode, session_tag=session_tag)
 
     return jsonify({
         'signals': signals,
         'total': total,
         'limit': limit,
         'offset': offset,
+        'filters': {
+            'pair': pair, 'status': status,
+            'mode': mode, 'session': session_tag,
+        }
     })
 
 
@@ -456,3 +495,75 @@ def opportunities_summary():
     days = request.args.get('days', type=int)
     summary = get_oie_summary(pair=pair, days=days)
     return jsonify(summary)
+
+
+# ============================================================
+# v17.56.7: Session-Based Performance Analytics
+# ============================================================
+
+@api_bp.route('/session-performance', methods=['GET'])
+@require_api_key
+def session_performance():
+    """
+    v17.56.7: Get London vs NY session performance comparison.
+    Only includes EXECUTION mode trades for accurate performance tracking.
+    
+    Query params:
+        pair: Filter by pair (optional)
+        days: Filter by recent N days (optional)
+    """
+    pair = request.args.get('pair')
+    days = request.args.get('days', type=int)
+
+    london_stats = get_performance_summary_filtered(
+        pair=pair, days=days, mode='EXECUTION', session_tag='LONDON'
+    )
+    ny_stats = get_performance_summary_filtered(
+        pair=pair, days=days, mode='EXECUTION', session_tag='NY'
+    )
+    overall_exec = get_performance_summary_filtered(
+        pair=pair, days=days, mode='EXECUTION'
+    )
+
+    return jsonify({
+        'london': london_stats,
+        'ny': ny_stats,
+        'overall_execution': overall_exec,
+        'filters': {'pair': pair, 'days': days, 'mode': 'EXECUTION'},
+    })
+
+
+@api_bp.route('/stats', methods=['GET'])
+@require_api_key
+def execution_stats():
+    """
+    v17.56.7: Get performance stats filtered by mode.
+    Defaults to EXECUTION-only trades for real performance tracking.
+    
+    Query params:
+        mode: "EXECUTION" (default) or "DATA" or "ALL"
+        session: "LONDON" or "NY" (optional)
+        pair: Filter by pair (optional)
+        days: Filter by recent N days (optional)
+    """
+    mode = request.args.get('mode', 'EXECUTION').upper()
+    session_tag = request.args.get('session')
+    pair = request.args.get('pair')
+    days = request.args.get('days', type=int)
+
+    # "ALL" means no mode filter
+    mode_filter = None if mode == 'ALL' else mode
+
+    stats = get_performance_summary_filtered(
+        pair=pair, days=days, mode=mode_filter, session_tag=session_tag
+    )
+
+    return jsonify({
+        'stats': stats,
+        'filters': {
+            'mode': mode,
+            'session': session_tag,
+            'pair': pair,
+            'days': days,
+        }
+    })

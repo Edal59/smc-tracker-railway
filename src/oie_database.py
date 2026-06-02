@@ -18,14 +18,23 @@ logger = logging.getLogger(__name__)
 def insert_opportunity(opp: dict, db_path=None) -> int:
     """
     Insert a normalized opportunity record.
+    v17.56.7: Includes mode, session_tag, valid, direction fields.
     Returns the new opportunity ID.
     """
     sql = """INSERT INTO opportunities
         (pair, setup_type, setup_id, h4_bias, pd_zone, kill_zone, guardian,
          entry_price, sl_price, tp_price, risk_pips, reward_pips, rr_ratio,
          quality_score, poi_score, poi_max, has_ote, confluence, dt_stage,
-         status, identified_at, raw_payload, version)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"""
+         status, identified_at, raw_payload, version,
+         mode, session_tag, valid)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                ?, ?, ?)"""
+
+    valid_val = opp.get("valid", True)
+    if isinstance(valid_val, bool):
+        valid_int = 1 if valid_val else 0
+    else:
+        valid_int = 1 if valid_val else 0
 
     values = (
         opp.get("pair"),
@@ -43,20 +52,26 @@ def insert_opportunity(opp: dict, db_path=None) -> int:
         opp.get("rr_ratio"),
         opp.get("quality_score"),
         opp.get("poi_score"),
-        opp.get("poi_max", 6),           # v17.56.6: default 6 (was implicit 5)
-        1 if opp.get("has_ote") else 0,  # v17.56.6: OTE Depth Bonus flag
+        opp.get("poi_max", 6),
+        1 if opp.get("has_ote") else 0,
         opp.get("confluence"),
         opp.get("dt_stage"),
         opp.get("status", "identified"),
         opp.get("identified_at", datetime.now(timezone.utc).isoformat()),
         opp.get("raw_payload"),
-        opp.get("version", "v17.56.6"),
+        opp.get("version", "v17.56.7"),
+        # v17.56.7: Dual mode fields
+        opp.get("mode", "DATA"),
+        opp.get("session_tag", "NY"),
+        valid_int,
     )
 
     with get_connection(db_path) as conn:
         cursor = conn.execute(sql, values)
         opp_id = cursor.lastrowid
-        logger.info(f"Inserted opportunity #{opp_id}: {opp.get('setup_type')} {opp.get('pair')}")
+        mode_tag = opp.get('mode', 'DATA')
+        session_tag = opp.get('session_tag', 'NY')
+        logger.info(f"Inserted opportunity #{opp_id}: {opp.get('setup_type')} {opp.get('pair')} [{mode_tag}/{session_tag}]")
         return opp_id
 
 

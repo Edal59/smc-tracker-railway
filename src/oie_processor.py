@@ -1,10 +1,16 @@
 """
 TradeX Tracker — Opportunity Intelligence Engine (OIE) Processor
-Version: v17.56.6
+Version: v17.56.7
 
 Normalizes incoming webhook payloads from TradingView alert() calls into
 clean opportunity records with human-readable decoded fields. Supports
-v17.54.x (current, dynamic JSON payloads), v17.25 (plot-based), and legacy formats.
+v17.56.7 (dual mode), v17.56.6, v17.54.x, v17.25, and legacy formats.
+
+v17.56.7 additions:
+- mode: "DATA" vs "EXECUTION" alert classification
+- session: "LONDON" vs "NY" trade session tagging
+- valid: true/false for zombie trade prevention
+- direction: exact from JSON (no inference/flipping)
 
 Also bridges to the legacy signals pipeline so existing dashboard and
 analytics continue to work seamlessly.
@@ -215,12 +221,17 @@ def is_oie_payload(payload: dict) -> bool:
     Determine if a payload is an OIE v17.14+ format vs legacy compact/full format.
 
     OIE payloads have:
-    - v17.54.x: 'alert' field with version starting with 'v17.5'
+    - v17.56.7+: 'direction' + 'setup' + version starting with 'v17.56.7'
+    - v17.54.x-v17.56.6: 'alert' field with version starting with 'v17.5'
     - v17.25/v17.14: 'type' field like 'sniper_long', 'sniper_short', etc.
     """
     version = payload.get("version", "")
 
-    # v17.54.x dynamic JSON format (alert() architecture)
+    # v17.56.7+: New dual-mode JSON format with direction/setup/mode/session
+    if "direction" in payload and "setup" in payload and version.startswith("v17.5"):
+        return True
+
+    # v17.54.x-v17.56.6 dynamic JSON format (alert() architecture)
     if "alert" in payload and version.startswith("v17.5"):
         return True
 
@@ -252,19 +263,19 @@ def validate_oie_payload(payload: dict) -> tuple:
     Validate a raw OIE webhook payload for required fields.
     Returns: (is_valid: bool, error_message: str)
 
-    Supports both v17.54.x (alert field) and v17.25 (type field) formats.
+    Supports v17.56.7 (setup+direction), v17.54.x (alert), and v17.25 (type) formats.
     """
     if not payload or not isinstance(payload, dict):
         return False, "Empty or invalid payload"
 
-    # v17.54.x uses 'alert' field, v17.25 uses 'type' field
-    if not payload.get("type") and not payload.get("alert"):
-        return False, "Missing required field: type or alert"
+    # v17.56.7 uses 'setup' + 'direction', v17.54.x uses 'alert', v17.25 uses 'type'
+    if not payload.get("type") and not payload.get("alert") and not payload.get("setup"):
+        return False, "Missing required field: type, alert, or setup"
 
     if not payload.get("symbol") and not payload.get("ticker"):
         return False, "Missing required field: symbol"
 
-    # v17.54.x uses 'price' (from {{close}}), v17.25 uses entry_price/suggested_entry
+    # v17.56.7 uses 'entry', v17.54.x uses 'price', v17.25 uses entry_price/suggested_entry
     has_entry = any(payload.get(k) is not None for k in
                     ("entry_price", "suggested_entry", "entry", "price"))
     if not has_entry:
@@ -277,12 +288,83 @@ def validate_oie_payload(payload: dict) -> tuple:
 # Core Normalizer
 # ============================================================================
 
+def _is_v17_56_7_payload(payload: dict) -> bool:
+    """Detect v17.56.7+ dual-mode payload format."""
+    return ("direction" in payload and "setup" in payload
+            and payload.get("version", "").startswith("v17.56.7"))
+
+
+def normalize_v17_56_7_payload(payload: dict) -> dict:
+    """
+    Normalize a v17.56.7 dual-mode JSON payload into the standard OIE format.
+
+    v17.56.7 payloads:
+        {"version":"v17.56.7","mode":"EXECUTION","session":"LONDON",
+         "symbol":"GBPUSD","direction":"LONG","setup":"A+ SNIPER",
+         "poi":6,"align":"WITH_TREND","htf_bias":"BULLISH","ltf_bias":"BULLISH",
+         "timestamp":"...","entry":1.34195,"sl":1.33800,"tp":1.35385,"valid":true}
+
+    Direction is taken EXACTLY from the JSON — no inference or flipping.
+    """
+    symbol = (payload.get("symbol") or payload.get("ticker", "UNKNOWN")).upper().strip()
+    direction = str(payload.get("direction", "LONG")).upper().strip()
+    setup_raw = str(payload.get("setup", "")).upper().strip()
+    mode = str(payload.get("mode", "DATA")).upper().strip()
+    session = str(payload.get("session", "NY")).upper().strip()
+    valid = payload.get("valid", True)
+
+    # Map setup name to standard type
+    setup_map = {
+        "A+ SNIPER": "sniper_long" if direction == "LONG" else "sniper_short",
+        "SNIPER": "sniper_long" if direction == "LONG" else "sniper_short",
+        "CONTINUATION": "retrace_long" if direction == "LONG" else "retrace_short",
+        "RETRACE": "retrace_long" if direction == "LONG" else "retrace_short",
+        "COUNTER": "counter_long" if direction == "LONG" else "counter_short",
+    }
+    setup_type = setup_map.get(setup_raw, setup_raw.lower().replace(" ", "_"))
+    if not setup_type:
+        setup_type = f"sniper_{'long' if direction == 'LONG' else 'short'}"
+
+    entry_price = _to_float(payload.get("entry"))
+    sl_price = _to_float(payload.get("sl"))
+    tp_price = _to_float(payload.get("tp"))
+    timestamp = payload.get("timestamp") or datetime.now(timezone.utc).isoformat()
+
+    return {
+        "type": setup_type,
+        "symbol": symbol,
+        "direction": direction,
+        "entry_price": entry_price,
+        "stop_loss": sl_price,
+        "take_profit": tp_price,
+        "version": payload.get("version", "v17.56.7"),
+        "timestamp": timestamp,
+        "setup_id": f"{symbol}_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}",
+        # v17.56.7: New fields
+        "mode": mode,
+        "session": session,
+        "valid": valid,
+        "align": payload.get("align", ""),
+        "htf_bias": payload.get("htf_bias", ""),
+        "ltf_bias": payload.get("ltf_bias", ""),
+        # Carry forward standard fields
+        "h4_bias": payload.get("h4_bias", payload.get("htf_bias", "")),
+        "poi": payload.get("poi"),
+        "kill_zone": payload.get("kill_zone"),
+        "guardian": payload.get("guardian", 0),
+        "quality": payload.get("quality"),
+        "confluence": payload.get("confluence"),
+        "dt_stage": payload.get("dt_stage"),
+    }
+
+
 def normalize_oie_payload(payload: dict) -> dict:
     """
     Normalize any v17.14+ webhook payload into a clean opportunity record
     with decoded categorical fields, ready for DB insertion.
 
     Handles:
+    - v17.56.7 dual-mode JSON payloads (direction/setup/mode/session)
     - v17.54.x dynamic JSON payloads (alert() architecture with {{close}} price)
     - v17.25 Sniper alerts (entry_price, stop_loss, take_profit)
     - v17.25 Retrace alerts (suggested_entry, target_sl, target_tp)
@@ -298,29 +380,34 @@ def normalize_oie_payload(payload: dict) -> dict:
 
     version = detect_version(payload)
 
-    # v17.54.x dynamic JSON: normalize into standard format first
-    if version.startswith("v17.5") and "alert" in payload:
+    # v17.56.7 dual-mode format: normalize first
+    if _is_v17_56_7_payload(payload):
+        payload = normalize_v17_56_7_payload(payload)
+    # v17.54.x-v17.56.6 dynamic JSON: normalize into standard format first
+    elif version.startswith("v17.5") and "alert" in payload:
         payload = normalize_v17_54_payload(payload)
 
     setup_type = payload.get("type", "unknown")
     symbol = payload.get("symbol") or payload.get("ticker", "UNKNOWN")
     symbol = symbol.upper().strip()
 
+    # --- v17.56.7: Extract direction EXACTLY from JSON ---
+    direction = payload.get("direction", "").upper().strip()
+    if not direction:
+        # Fallback: infer from setup_type for older payloads
+        direction = "LONG" if ("long" in setup_type or "buy" in setup_type) else "SHORT"
+
     # --- Extract price levels ---
-    # Support v17.54.x (entry_price from normalization), v17.25, and v17.14 field names
-    if is_sniper_payload(payload):
-        entry_price = _to_float(payload.get("entry_price") or payload.get("entry"))
-        sl_price = _to_float(payload.get("stop_loss") or payload.get("sl"))
-        tp_price = _to_float(payload.get("take_profit") or payload.get("tp"))
-    elif is_retrace_payload(payload):
-        entry_price = _to_float(payload.get("suggested_entry") or payload.get("entry") or payload.get("entry_price"))
-        sl_price = _to_float(payload.get("target_sl") or payload.get("sl") or payload.get("stop_loss"))
-        tp_price = _to_float(payload.get("target_tp") or payload.get("tp") or payload.get("take_profit"))
-    else:
-        # Legacy / counter-trend fallback
-        entry_price = _to_float(payload.get("entry_price") or payload.get("entry"))
-        sl_price = _to_float(payload.get("stop_loss") or payload.get("sl"))
-        tp_price = _to_float(payload.get("take_profit") or payload.get("tp"))
+    # Support v17.56.7 (entry/sl/tp), v17.54.x, v17.25, and v17.14 field names
+    entry_price = _to_float(
+        payload.get("entry_price") or payload.get("entry") or payload.get("suggested_entry")
+    )
+    sl_price = _to_float(
+        payload.get("stop_loss") or payload.get("sl") or payload.get("target_sl")
+    )
+    tp_price = _to_float(
+        payload.get("take_profit") or payload.get("tp") or payload.get("target_tp")
+    )
 
     # --- Calculate risk metrics ---
     risk_pips = calculate_pips(entry_price, sl_price, symbol)
@@ -328,7 +415,13 @@ def normalize_oie_payload(payload: dict) -> dict:
     rr_ratio = round(reward_pips / risk_pips, 2) if risk_pips > 0 else 0.0
 
     # --- Decode categorical fields ---
-    h4_bias = decode_h4_bias(payload.get("h4_bias", 0))
+    # v17.56.7: htf_bias is a string like "BULLISH"/"BEARISH", decode_h4_bias takes numeric
+    raw_h4 = payload.get("h4_bias", 0)
+    if isinstance(raw_h4, str) and raw_h4.upper() in ("BULLISH", "BEARISH", "NEUTRAL"):
+        h4_bias = raw_h4.capitalize()
+    else:
+        h4_bias = decode_h4_bias(raw_h4)
+
     raw_pd = payload.get("p_d_zone") or payload.get("pd_zone") or payload.get("zone", 0)
     pd_zone = decode_pd_zone(raw_pd)
     guardian = decode_guardian(payload.get("guardian", 0))
@@ -337,7 +430,7 @@ def normalize_oie_payload(payload: dict) -> dict:
 
     # --- Quality scores ---
     quality_score = _to_float(payload.get("quality"))
-    # v17.56.6: Parse POI with /6 denominator and (OTE) tag support
+    # v17.56.6+: Parse POI with /6 denominator and (OTE) tag support
     poi_parsed = parse_poi_field(payload.get("poi"))
     poi_score = poi_parsed["score"]
     poi_max = poi_parsed["max"]
@@ -348,8 +441,20 @@ def normalize_oie_payload(payload: dict) -> dict:
     # --- Timestamp ---
     timestamp = payload.get("timestamp") or datetime.now(timezone.utc).isoformat()
 
-    return {
+    # --- v17.56.7: Mode, session, valid ---
+    mode = str(payload.get("mode", "DATA")).upper().strip()
+    if mode not in ("DATA", "EXECUTION"):
+        mode = "DATA"
+    session_tag = str(payload.get("session", "NY")).upper().strip()
+    if session_tag not in ("LONDON", "NY"):
+        session_tag = "NY"
+    valid = payload.get("valid", True)
+    if isinstance(valid, str):
+        valid = valid.lower() not in ("false", "0", "no")
+
+    result = {
         "pair": symbol,
+        "direction": direction,
         "setup_type": setup_type,
         "setup_id": payload.get("setup_id", "dynamic"),
         "h4_bias": h4_bias,
@@ -364,15 +469,21 @@ def normalize_oie_payload(payload: dict) -> dict:
         "rr_ratio": rr_ratio,
         "quality_score": quality_score,
         "poi_score": poi_score,
-        "poi_max": poi_max,           # v17.56.6: max POI score (6 for v17.56.6+)
-        "has_ote": has_ote,           # v17.56.6: OTE Depth Bonus flag
+        "poi_max": poi_max,
+        "has_ote": has_ote,
         "confluence": confluence,
         "dt_stage": dt_stage,
         "status": "identified",
         "identified_at": timestamp,
         "raw_payload": json.dumps(payload),
         "version": payload.get("version", "unknown"),
+        # v17.56.7: Dual mode fields
+        "mode": mode,
+        "session_tag": session_tag,
+        "valid": valid,
     }
+
+    return result
 
 
 # ============================================================================
@@ -381,37 +492,49 @@ def normalize_oie_payload(payload: dict) -> dict:
 
 def oie_to_legacy_compact(payload: dict) -> dict:
     """
-    Convert an OIE v17.54.x/v17.25 payload into the compact format that the existing
-    processor.py understands, so it also gets recorded in the signals table
+    Convert an OIE v17.54.x/v17.25/v17.56.7 payload into the compact format that the
+    existing processor.py understands, so it also gets recorded in the signals table
     for backward compatibility with dashboard/analytics.
 
-    This allows the existing dashboard to continue showing signals while the
-    new OIE pipeline tracks opportunities in parallel.
+    v17.56.7: Uses direction from JSON exactly. Passes mode/session_tag/valid.
     """
-    setup_type = payload.get("type", "")
+    setup_type = payload.get("type", "") or payload.get("setup", "")
     symbol = payload.get("symbol") or payload.get("ticker", "UNKNOWN")
     now = datetime.now(timezone.utc)
     ts = payload.get("timestamp", now.isoformat())
 
-    # Map setup_type to direction
-    is_long = "long" in setup_type.lower()
-    direction = "L" if is_long else "S"
+    # v17.56.7: Use direction from JSON exactly if available
+    raw_dir = payload.get("direction", "").upper().strip()
+    if raw_dir in ("LONG", "SHORT"):
+        is_long = raw_dir == "LONG"
+        direction = "L" if is_long else "S"
+    else:
+        # Fallback: infer from setup_type
+        is_long = "long" in setup_type.lower() or "buy" in setup_type.lower()
+        direction = "L" if is_long else "S"
 
     # Map to signal type
     is_sniper = "sniper" in setup_type.lower()
-    sig_type = "STD" if is_sniper else "CT"  # sniper=standard, retrace=counter-trend mapping
+    sig_type = "STD" if is_sniper else "CT"
 
-    # Extract prices
-    if is_sniper:
-        ep = _to_float(payload.get("entry_price"))
-        sl = _to_float(payload.get("stop_loss"))
-        tp = _to_float(payload.get("take_profit"))
-    else:
-        ep = _to_float(payload.get("suggested_entry"))
-        sl = _to_float(payload.get("target_sl"))
-        tp = _to_float(payload.get("target_tp"))
+    # Extract prices — unified for all versions
+    ep = _to_float(payload.get("entry_price") or payload.get("entry") or payload.get("suggested_entry"))
+    sl = _to_float(payload.get("stop_loss") or payload.get("sl") or payload.get("target_sl"))
+    tp = _to_float(payload.get("take_profit") or payload.get("tp") or payload.get("target_tp"))
 
     signal_id = payload.get("setup_id") or f"{symbol}_{now.strftime('%Y%m%d_%H%M%S')}"
+
+    # v17.56.7: Extract mode/session/valid for passthrough
+    mode = str(payload.get("mode", "DATA")).upper().strip()
+    session_tag = str(payload.get("session", "NY")).upper().strip()
+    valid = payload.get("valid", True)
+
+    # Decode h4_bias — handle both string and numeric forms
+    raw_h4 = payload.get("h4_bias", 0)
+    if isinstance(raw_h4, str) and raw_h4.upper() in ("BULLISH", "BEARISH"):
+        h4_code = "BU" if raw_h4.upper() == "BULLISH" else "BE"
+    else:
+        h4_code = "BU" if decode_h4_bias(raw_h4) == "Bullish" else "BE"
 
     return {
         "e": "ENTRY",
@@ -425,12 +548,16 @@ def oie_to_legacy_compact(payload: dict) -> dict:
         "ps": parse_poi_field(payload.get("poi"))["score"],
         "rr": 3.0,
         "t": ts,
-        "v": payload.get("version", "v17.56.6").replace("v", ""),
-        "h4": "BU" if decode_h4_bias(payload.get("h4_bias", 0)) == "Bullish" else "BE",
+        "v": payload.get("version", "v17.56.7").replace("v", ""),
+        "h4": h4_code,
         "z": {"Premium": "P", "Discount": "D", "Equilibrium": "E"}.get(
             decode_pd_zone(payload.get("p_d_zone") or payload.get("pd_zone") or payload.get("zone", 0)),
             "E"
         ),
         "str": "BU" if is_long else "BE",
         "kz": _to_int(payload.get("kill_zone", 0)),
+        # v17.56.7: Dual mode fields passed through to processor
+        "_mode": mode,
+        "_session_tag": session_tag,
+        "_valid": valid,
     }

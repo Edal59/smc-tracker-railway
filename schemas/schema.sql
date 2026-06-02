@@ -67,7 +67,7 @@ CREATE TABLE IF NOT EXISTS signals (
     session             TEXT,                          -- 'London', 'New York', 'Asian', 'Overlap'
     
     -- Outcome Tracking
-    status              TEXT NOT NULL DEFAULT 'ACTIVE' CHECK(status IN ('ACTIVE', 'WON', 'LOST', 'TIMEOUT', 'GET_OUT', 'CANCELLED')),
+    status              TEXT NOT NULL DEFAULT 'ACTIVE' CHECK(status IN ('ACTIVE', 'WON', 'LOST', 'TIMEOUT', 'GET_OUT', 'CANCELLED', 'INVALID')),
     outcome_timestamp   TEXT,                          -- When TP/SL/Timeout occurred
     outcome_price       REAL,                          -- Price when outcome determined
     bars_to_outcome     INTEGER,                       -- Number of bars from entry to outcome

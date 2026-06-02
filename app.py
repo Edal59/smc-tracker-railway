@@ -56,7 +56,7 @@ setup_logging()
 logger = logging.getLogger(__name__)
 
 logger.info("=" * 60)
-logger.info("TradeX OIE v17.56.6 — Cloud Mode")
+logger.info("TradeX OIE v17.56.7 — Cloud Mode (Dual Mode Alert System)")
 logger.info("=" * 60)
 
 # Initialize database
@@ -88,10 +88,12 @@ logger.info(f"  Auth required: {config.require_auth}")
 logger.info(f"  API Key set: {'Yes' if config.api_key else 'No (WARNING!)'}")
 logger.info(f"  Price tracker: {'enabled' if config.price_tracker_enabled else 'disabled'}")
 logger.info(f"  Endpoints:")
-logger.info(f"    POST /api/v1/signal  (webhook)")
-logger.info(f"    GET  /api/v1/health  (health check)")
-logger.info(f"    GET  /api/v1/signals (list signals)")
-logger.info(f"    GET  /           (dashboard)")
+logger.info(f"    POST /api/v1/signal              (webhook)")
+logger.info(f"    GET  /api/v1/health              (health check)")
+logger.info(f"    GET  /api/v1/signals             (list signals — ?mode=&session=)")
+logger.info(f"    GET  /api/v1/stats               (execution stats)")
+logger.info(f"    GET  /api/v1/session-performance  (London vs NY)")
+logger.info(f"    GET  /                            (dashboard)")
 
 if __name__ == '__main__':
     app.run(host=host, port=port, debug=False)
