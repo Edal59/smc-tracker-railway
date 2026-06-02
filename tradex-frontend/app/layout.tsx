@@ -6,8 +6,8 @@ import "./globals.css";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "TradeX OIE v17.54.1",
-  description: "SMC Premium/Discount Confluence Engine — Opportunity Intelligence Dashboard",
+  title: "TradeX OIE v17.56.7",
+  description: "SMC Premium/Discount Confluence Engine — Dual Mode Alert System + Session Analytics Dashboard",
 };
 
 function NavLink({ href, children }: { href: string; children: React.ReactNode }) {
@@ -35,7 +35,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 </svg>
               </div>
               <span className="font-semibold text-lg">
-                TradeX OIE <span className="text-emerald-400 font-mono text-sm ml-1">v17.54.1</span>
+                TradeX OIE <span className="text-emerald-400 font-mono text-sm ml-1">v17.56.7</span>
               </span>
             </Link>
             <nav className="hidden md:flex items-center gap-1">
@@ -57,10 +57,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         </main>
         <footer className="border-t border-zinc-800 mt-16">
           <div className="mx-auto max-w-7xl flex items-center justify-between px-4 py-6 text-sm text-zinc-500">
-            <span>TradeX OIE <span className="font-mono text-zinc-300">v17.54.1</span></span>
+            <span>TradeX OIE <span className="font-mono text-zinc-300">v17.56.7</span> — Dual Mode Alerts</span>
             <div className="flex items-center gap-4">
               <Link href="/" className="hover:text-zinc-300 transition-colors">Dashboard</Link>
               <Link href="/opportunities" className="hover:text-zinc-300 transition-colors">Opportunities</Link>
+              <Link href="/trades" className="hover:text-zinc-300 transition-colors">Trade Log</Link>
               <Link href="/settings" className="hover:text-zinc-300 transition-colors">Settings</Link>
             </div>
           </div>

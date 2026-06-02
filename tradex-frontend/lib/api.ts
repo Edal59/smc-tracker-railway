@@ -1,6 +1,7 @@
 /**
- * TradeX OIE v17.54.1 — API Client
+ * TradeX OIE v17.56.7 — API Client
  * Connects to the Railway Flask backend.
+ * Supports dual-mode alerts, session analytics, and filtered stats.
  */
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'https://web-production-b63af.up.railway.app';
@@ -37,7 +38,7 @@ async function apiFetch<T = any>(path: string, opts: FetchOptions = {}): Promise
 
 // ─── Health ────────────────────────────────────────────
 export async function getHealth() {
-  return apiFetch<{ status: string; version: string; service: string }>('/api/v1/health');
+  return apiFetch<{ status: string; version: string; service: string; features?: string[] }>('/api/v1/health');
 }
 
 // ─── Opportunities (OIE) ──────────────────────────────
@@ -63,6 +64,9 @@ export interface Opportunity {
   status: string;
   identified_at: string;
   version: string;
+  mode?: string;
+  session_tag?: string;
+  valid?: boolean;
 }
 
 export async function getOpportunities(params?: Record<string, string>) {
@@ -95,7 +99,13 @@ export interface Signal {
   kill_zone: string;
   signal_timestamp: string;
   trade_status: string;
+  mode?: string;
+  session_tag?: string;
+  valid?: boolean;
 }
+
+export type AlertMode = 'ALL' | 'EXECUTION' | 'DATA';
+export type SessionFilter = 'ALL' | 'LONDON' | 'NY';
 
 export async function getSignals(params?: Record<string, string>) {
   const qs = params ? '?' + new URLSearchParams(params).toString() : '';
@@ -110,4 +120,68 @@ export async function getMetrics(params?: Record<string, string>) {
 export async function getPnlCurve(params?: Record<string, string>) {
   const qs = params ? '?' + new URLSearchParams(params).toString() : '';
   return apiFetch<{ data: any[] }>(`/api/v1/pnl${qs}`);
+}
+
+// ─── v17.56.7 New Endpoints ───────────────────────────
+
+/** Fetch filtered stats (defaults to EXECUTION mode) */
+export async function getStats(params?: Record<string, string>) {
+  const qs = params ? '?' + new URLSearchParams(params).toString() : '';
+  return apiFetch<Record<string, any>>(`/api/v1/stats${qs}`);
+}
+
+/** Session performance comparison (London vs NY) */
+export interface SessionPerformance {
+  session: string;
+  total_trades: number;
+  wins: number;
+  losses: number;
+  win_rate: number;
+  avg_rr: number;
+  expectancy: number;
+  best_rr: number;
+  worst_rr: number;
+}
+
+export interface SessionPerformanceResponse {
+  london: SessionPerformance;
+  ny: SessionPerformance;
+  comparison: {
+    better_session: string;
+    win_rate_diff: number;
+    rr_diff: number;
+  };
+  filters: {
+    mode: string;
+    pair: string;
+    days: number;
+  };
+}
+
+export async function getSessionPerformance(params?: Record<string, string>) {
+  const qs = params ? '?' + new URLSearchParams(params).toString() : '';
+  return apiFetch<SessionPerformanceResponse>(`/api/v1/session-performance${qs}`);
+}
+
+// ─── Helpers ──────────────────────────────────────────
+
+/** Check if a trade should be classified as INVALID (missing prices) */
+export function isInvalidTrade(signal: Signal): boolean {
+  return (
+    !signal.entry_price ||
+    signal.entry_price === 0 ||
+    !signal.stop_loss ||
+    signal.stop_loss === 0 ||
+    !signal.take_profit ||
+    signal.take_profit === 0
+  );
+}
+
+/** Get the display status — overrides LOST with INVALID when prices are missing */
+export function getDisplayStatus(signal: Signal): string {
+  if (signal.status === 'INVALID') return 'INVALID';
+  if (isInvalidTrade(signal) && (signal.status === 'LOST' || signal.status === 'ACTIVE')) {
+    return 'INVALID';
+  }
+  return signal.status;
 }
