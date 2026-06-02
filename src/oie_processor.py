@@ -1,6 +1,6 @@
 """
 TradeX Tracker — Opportunity Intelligence Engine (OIE) Processor
-Version: v17.54.2
+Version: v17.56.6
 
 Normalizes incoming webhook payloads from TradingView alert() calls into
 clean opportunity records with human-readable decoded fields. Supports
@@ -43,6 +43,39 @@ def _to_int(val, default=0) -> int:
         return default
 
 
+def parse_poi_field(val) -> dict:
+    """
+    Parse a POI field that may be an integer, a string like "5/6", or "5/6 (OTE)".
+    v17.56.6: Supports new /6 denominator and (OTE) tag extraction.
+
+    Returns:
+        {"score": int, "max": int, "has_ote": bool, "display": str}
+    """
+    result = {"score": 0, "max": 6, "has_ote": False, "display": "0/6"}
+
+    if val is None:
+        return result
+
+    val_str = str(val).strip()
+    if not val_str:
+        return result
+
+    # Check for (OTE) tag
+    result["has_ote"] = "(OTE)" in val_str
+    clean = val_str.replace("(OTE)", "").strip()
+
+    # Parse "X/Y" format or plain integer
+    if "/" in clean:
+        parts = clean.split("/")
+        result["score"] = _to_int(parts[0])
+        result["max"] = _to_int(parts[1], default=6)
+    else:
+        result["score"] = _to_int(clean)
+
+    result["display"] = val_str
+    return result
+
+
 def calculate_pips(price1: float, price2: float, symbol: str) -> float:
     """
     Calculate pip distance between two prices.
@@ -74,7 +107,7 @@ def detect_version(payload: dict) -> str:
         return "v17.12.3"
     # Check for v17.54.x format by alert field presence
     if "alert" in payload and version:
-        return version if version.startswith("v17") else "v17.54.2"
+        return version if version.startswith("v17") else "v17.56.6"
     # Check for compact format (existing tracker format)
     if "e" in payload and "id" in payload:
         return "compact"
@@ -102,6 +135,11 @@ _V17_54_ALERT_MAP = {
     "COUNTER BUY": "counter_long",
     "COUNTER_SELL": "counter_short",
     "COUNTER SELL": "counter_short",
+    # v17.56.6: CONTINUATION alerts (renamed from RETRACE in Pine Script v17.56.x)
+    "CONTINUATION_LONG": "retrace_long",
+    "CONTINUATION LONG": "retrace_long",
+    "CONTINUATION_SHORT": "retrace_short",
+    "CONTINUATION SHORT": "retrace_short",
 }
 
 
@@ -154,7 +192,7 @@ def normalize_v17_54_payload(payload: dict) -> dict:
         "entry_price": price,
         "stop_loss": sl,
         "take_profit": tp,
-        "version": payload.get("version", "v17.54.2"),
+        "version": payload.get("version", "v17.56.6"),
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "timeframe": timeframe,
         "subtype": subtype,
@@ -299,7 +337,11 @@ def normalize_oie_payload(payload: dict) -> dict:
 
     # --- Quality scores ---
     quality_score = _to_float(payload.get("quality"))
-    poi_score = _to_int(payload.get("poi"))
+    # v17.56.6: Parse POI with /6 denominator and (OTE) tag support
+    poi_parsed = parse_poi_field(payload.get("poi"))
+    poi_score = poi_parsed["score"]
+    poi_max = poi_parsed["max"]
+    has_ote = poi_parsed["has_ote"]
     confluence = _to_int(payload.get("confluence"))
     dt_stage = _to_int(payload.get("dt_stage")) if is_sniper_payload(payload) else None
 
@@ -322,6 +364,8 @@ def normalize_oie_payload(payload: dict) -> dict:
         "rr_ratio": rr_ratio,
         "quality_score": quality_score,
         "poi_score": poi_score,
+        "poi_max": poi_max,           # v17.56.6: max POI score (6 for v17.56.6+)
+        "has_ote": has_ote,           # v17.56.6: OTE Depth Bonus flag
         "confluence": confluence,
         "dt_stage": dt_stage,
         "status": "identified",
@@ -378,10 +422,10 @@ def oie_to_legacy_compact(payload: dict) -> dict:
         "ep": ep,
         "sl": sl,
         "tp": tp,
-        "ps": _to_int(payload.get("poi", 0)),
+        "ps": parse_poi_field(payload.get("poi"))["score"],
         "rr": 3.0,
         "t": ts,
-        "v": payload.get("version", "v17.54.2").replace("v", ""),
+        "v": payload.get("version", "v17.56.6").replace("v", ""),
         "h4": "BU" if decode_h4_bias(payload.get("h4_bias", 0)) == "Bullish" else "BE",
         "z": {"Premium": "P", "Discount": "D", "Equilibrium": "E"}.get(
             decode_pd_zone(payload.get("p_d_zone") or payload.get("pd_zone") or payload.get("zone", 0)),

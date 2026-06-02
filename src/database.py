@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 SCHEMA_PATH = os.path.join(PROJECT_ROOT, 'schemas', 'schema.sql')
 MIGRATION_PATH = os.path.join(PROJECT_ROOT, 'schemas', 'migrate_trade_tracking.sql')
 OIE_MIGRATION_PATH = os.path.join(PROJECT_ROOT, 'schemas', 'migrate_v17_14_oie.sql')
+OTE_MIGRATION_PATH = os.path.join(PROJECT_ROOT, 'schemas', 'migrate_v17_56_6_ote.sql')
 
 
 def get_db_path():
@@ -73,6 +74,33 @@ def _run_oie_migration(conn):
         logger.warning(f"OIE migration file not found: {OIE_MIGRATION_PATH}")
 
 
+def _run_ote_migration(conn):
+    """Run v17.56.6 OTE migration — adds poi_max and has_ote columns to opportunities."""
+    cursor = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='opportunities'"
+    )
+    if not cursor.fetchone():
+        logger.info("OTE migration: opportunities table doesn't exist yet, skipping")
+        return
+
+    cursor = conn.execute("PRAGMA table_info(opportunities)")
+    columns = [row[1] for row in cursor.fetchall()]
+
+    ote_columns = [
+        ("poi_max", "INTEGER DEFAULT 6"),
+        ("has_ote", "INTEGER DEFAULT 0"),
+    ]
+    for col_name, col_def in ote_columns:
+        if col_name not in columns:
+            try:
+                conn.execute(f"ALTER TABLE opportunities ADD COLUMN {col_name} {col_def}")
+                logger.info(f"OTE migration: added column {col_name}")
+            except Exception as e:
+                logger.warning(f"OTE migration: column {col_name} may already exist: {e}")
+    conn.commit()
+    logger.info("OTE v17.56.6 migration complete")
+
+
 def init_db(db_path=None):
     """Initialize database with schema."""
     path = db_path or get_db_path()
@@ -88,6 +116,8 @@ def init_db(db_path=None):
         _run_migrations(conn)
         # Run OIE migration for v17.54.x opportunity tracking
         _run_oie_migration(conn)
+        # Run OTE migration for v17.56.6 POI /6 + OTE support
+        _run_ote_migration(conn)
         logger.info(f"Database initialized at {path}")
     finally:
         conn.close()

@@ -23,9 +23,9 @@ def insert_opportunity(opp: dict, db_path=None) -> int:
     sql = """INSERT INTO opportunities
         (pair, setup_type, setup_id, h4_bias, pd_zone, kill_zone, guardian,
          entry_price, sl_price, tp_price, risk_pips, reward_pips, rr_ratio,
-         quality_score, poi_score, confluence, dt_stage,
+         quality_score, poi_score, poi_max, has_ote, confluence, dt_stage,
          status, identified_at, raw_payload, version)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"""
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"""
 
     values = (
         opp.get("pair"),
@@ -43,12 +43,14 @@ def insert_opportunity(opp: dict, db_path=None) -> int:
         opp.get("rr_ratio"),
         opp.get("quality_score"),
         opp.get("poi_score"),
+        opp.get("poi_max", 6),           # v17.56.6: default 6 (was implicit 5)
+        1 if opp.get("has_ote") else 0,  # v17.56.6: OTE Depth Bonus flag
         opp.get("confluence"),
         opp.get("dt_stage"),
         opp.get("status", "identified"),
         opp.get("identified_at", datetime.now(timezone.utc).isoformat()),
         opp.get("raw_payload"),
-        opp.get("version", "v17.54.2"),
+        opp.get("version", "v17.56.6"),
     )
 
     with get_connection(db_path) as conn:
