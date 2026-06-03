@@ -19,6 +19,7 @@ def insert_opportunity(opp: dict, db_path=None) -> int:
     """
     Insert a normalized opportunity record.
     v17.56.7: Includes mode, session_tag, valid, direction fields.
+    v17.56.8: Includes amd_state, sniper_today, execution_today fields.
     Returns the new opportunity ID.
     """
     sql = """INSERT INTO opportunities
@@ -26,8 +27,10 @@ def insert_opportunity(opp: dict, db_path=None) -> int:
          entry_price, sl_price, tp_price, risk_pips, reward_pips, rr_ratio,
          quality_score, poi_score, poi_max, has_ote, confluence, dt_stage,
          status, identified_at, raw_payload, version,
-         mode, session_tag, valid)
+         mode, session_tag, valid,
+         amd_state, sniper_today, execution_today)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                ?, ?, ?,
                 ?, ?, ?)"""
 
     valid_val = opp.get("valid", True)
@@ -59,11 +62,15 @@ def insert_opportunity(opp: dict, db_path=None) -> int:
         opp.get("status", "identified"),
         opp.get("identified_at", datetime.now(timezone.utc).isoformat()),
         opp.get("raw_payload"),
-        opp.get("version", "v17.56.7"),
+        opp.get("version", "v17.56.8"),
         # v17.56.7: Dual mode fields
         opp.get("mode", "DATA"),
         opp.get("session_tag", "NY"),
         valid_int,
+        # v17.56.8: HUD sync fields
+        opp.get("amd_state", "ACCUMULATION"),
+        int(opp.get("sniper_today", 0) or 0),
+        int(opp.get("execution_today", 0) or 0),
     )
 
     with get_connection(db_path) as conn:

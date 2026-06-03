@@ -1,10 +1,18 @@
 """
 TradeX Tracker — Opportunity Intelligence Engine (OIE) Processor
-Version: v17.56.7
+Version: v17.56.8
 
 Normalizes incoming webhook payloads from TradingView alert() calls into
 clean opportunity records with human-readable decoded fields. Supports
-v17.56.7 (dual mode), v17.56.6, v17.54.x, v17.25, and legacy formats.
+v17.56.8 (HUD sync), v17.56.7 (dual mode), v17.56.6, v17.54.x, v17.25, and
+legacy formats.
+
+v17.56.8 additions (HUD sync):
+- amd_state: market AMD/Wyckoff state
+  (ACCUMULATION | MANIPULATION | DISTRIBUTION | MARKUP | MARKDOWN)
+- sniper_today: count of A+ SNIPER alerts fired today (HUD counter)
+- execution_today: count of EXECUTION-mode alerts fired today (HUD counter)
+- Fully backward compatible with v17.56.7 payloads (missing fields default).
 
 v17.56.7 additions:
 - mode: "DATA" vs "EXECUTION" alert classification
@@ -21,6 +29,7 @@ from datetime import datetime, timezone
 
 from src.decoders import decode_h4_bias, decode_pd_zone, decode_guardian, decode_kill_zone
 from src.database import get_pip_size
+from src.version import VERSION, normalize_amd_state, DEFAULT_AMD_STATE
 
 logger = logging.getLogger(__name__)
 
@@ -289,9 +298,15 @@ def validate_oie_payload(payload: dict) -> tuple:
 # ============================================================================
 
 def _is_v17_56_7_payload(payload: dict) -> bool:
-    """Detect v17.56.7+ dual-mode payload format."""
+    """Detect v17.56.7+ dual-mode payload format (v17.56.7 and v17.56.8)."""
     return ("direction" in payload and "setup" in payload
-            and payload.get("version", "").startswith("v17.56.7"))
+            and payload.get("version", "").startswith(("v17.56.7", "v17.56.8")))
+
+
+def _is_v17_56_8_payload(payload: dict) -> bool:
+    """Detect a v17.56.8 HUD-sync payload format."""
+    return ("direction" in payload and "setup" in payload
+            and payload.get("version", "").startswith("v17.56.8"))
 
 
 def normalize_v17_56_7_payload(payload: dict) -> dict:
@@ -330,6 +345,11 @@ def normalize_v17_56_7_payload(payload: dict) -> dict:
     tp_price = _to_float(payload.get("tp"))
     timestamp = payload.get("timestamp") or datetime.now(timezone.utc).isoformat()
 
+    # v17.56.8: HUD sync fields (default-safe for v17.56.7 payloads)
+    amd_state = normalize_amd_state(payload.get("amd_state"))
+    sniper_today = _to_int(payload.get("sniper_today"), default=0)
+    execution_today = _to_int(payload.get("execution_today"), default=0)
+
     return {
         "type": setup_type,
         "symbol": symbol,
@@ -337,7 +357,7 @@ def normalize_v17_56_7_payload(payload: dict) -> dict:
         "entry_price": entry_price,
         "stop_loss": sl_price,
         "take_profit": tp_price,
-        "version": payload.get("version", "v17.56.7"),
+        "version": payload.get("version", VERSION),
         "timestamp": timestamp,
         "setup_id": f"{symbol}_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}",
         # v17.56.7: New fields
@@ -347,6 +367,10 @@ def normalize_v17_56_7_payload(payload: dict) -> dict:
         "align": payload.get("align", ""),
         "htf_bias": payload.get("htf_bias", ""),
         "ltf_bias": payload.get("ltf_bias", ""),
+        # v17.56.8: HUD sync fields
+        "amd_state": amd_state,
+        "sniper_today": sniper_today,
+        "execution_today": execution_today,
         # Carry forward standard fields
         "h4_bias": payload.get("h4_bias", payload.get("htf_bias", "")),
         "poi": payload.get("poi"),
@@ -452,6 +476,11 @@ def normalize_oie_payload(payload: dict) -> dict:
     if isinstance(valid, str):
         valid = valid.lower() not in ("false", "0", "no")
 
+    # --- v17.56.8: AMD state + daily HUD counters ---
+    amd_state = normalize_amd_state(payload.get("amd_state"))
+    sniper_today = _to_int(payload.get("sniper_today"), default=0)
+    execution_today = _to_int(payload.get("execution_today"), default=0)
+
     result = {
         "pair": symbol,
         "direction": direction,
@@ -481,6 +510,10 @@ def normalize_oie_payload(payload: dict) -> dict:
         "mode": mode,
         "session_tag": session_tag,
         "valid": valid,
+        # v17.56.8: HUD sync fields
+        "amd_state": amd_state,
+        "sniper_today": sniper_today,
+        "execution_today": execution_today,
     }
 
     return result
@@ -529,6 +562,11 @@ def oie_to_legacy_compact(payload: dict) -> dict:
     session_tag = str(payload.get("session", "NY")).upper().strip()
     valid = payload.get("valid", True)
 
+    # v17.56.8: Extract HUD sync fields for passthrough
+    amd_state = normalize_amd_state(payload.get("amd_state"))
+    sniper_today = _to_int(payload.get("sniper_today"), default=0)
+    execution_today = _to_int(payload.get("execution_today"), default=0)
+
     # Decode h4_bias — handle both string and numeric forms
     raw_h4 = payload.get("h4_bias", 0)
     if isinstance(raw_h4, str) and raw_h4.upper() in ("BULLISH", "BEARISH"):
@@ -560,4 +598,75 @@ def oie_to_legacy_compact(payload: dict) -> dict:
         "_mode": mode,
         "_session_tag": session_tag,
         "_valid": valid,
+        # v17.56.8: HUD sync fields passed through to processor
+        "_amd_state": amd_state,
+        "_sniper_today": sniper_today,
+        "_execution_today": execution_today,
     }
+
+
+
+# ============================================================================
+# v17.56.8: Explicit Versioned Decoder API
+# ----------------------------------------------------------------------------
+# Thin, well-documented wrappers around normalize_oie_payload() that make the
+# version-detection contract explicit and easy to unit test. The webhook route
+# uses normalize_oie_payload() directly; these helpers provide a stable,
+# version-aware decoding surface (and guarantee backward compatibility).
+# ============================================================================
+
+def decode_v17_56_8_payload(payload: dict) -> dict:
+    """Decode a v17.56.8 payload (HUD sync fields) into a normalized record.
+
+    Parses the new v17.56.8 fields (amd_state, sniper_today, execution_today)
+    in addition to all existing v17.56.7 dual-mode fields.
+    """
+    record = normalize_oie_payload(payload)
+    # Guarantee the v17.56.8 fields are present and validated.
+    record["amd_state"] = normalize_amd_state(record.get("amd_state"))
+    record["sniper_today"] = _to_int(record.get("sniper_today"), default=0)
+    record["execution_today"] = _to_int(record.get("execution_today"), default=0)
+    return record
+
+
+def decode_v17_56_7_payload(payload: dict) -> dict:
+    """Decode a v17.56.7 payload, defaulting the v17.56.8 HUD fields.
+
+    Ensures backward compatibility: v17.56.7 payloads (which lack amd_state /
+    sniper_today / execution_today) get safe defaults.
+    """
+    record = normalize_oie_payload(payload)
+    record.setdefault("amd_state", DEFAULT_AMD_STATE)
+    record.setdefault("sniper_today", 0)
+    record.setdefault("execution_today", 0)
+    record["amd_state"] = normalize_amd_state(record.get("amd_state"))
+    return record
+
+
+def decode_legacy_payload(payload: dict) -> dict:
+    """Decode any pre-v17.56.7 payload (v17.54.x / v17.25 / compact / legacy).
+
+    New HUD-sync fields default to ACCUMULATION / 0 / 0.
+    """
+    record = normalize_oie_payload(payload)
+    record.setdefault("amd_state", DEFAULT_AMD_STATE)
+    record.setdefault("sniper_today", 0)
+    record.setdefault("execution_today", 0)
+    return record
+
+
+def decode_payload(payload: dict) -> dict:
+    """Universal decoder with version detection.
+
+    Routes the payload to the correct version-specific decoder and always
+    returns a normalized record that includes the v17.56.8 HUD-sync fields
+    (with safe defaults for older payloads).
+    """
+    version = str(payload.get("version", "unknown"))
+
+    if version.startswith("v17.56.8"):
+        return decode_v17_56_8_payload(payload)
+    elif version.startswith("v17.56.7"):
+        return decode_v17_56_7_payload(payload)
+    else:
+        return decode_legacy_payload(payload)

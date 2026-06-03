@@ -43,6 +43,11 @@ CREATE TABLE IF NOT EXISTS opportunities (
     activated_at    TEXT,                                     -- when price reaches entry zone
     closed_at       TEXT,                                     -- when outcome determined
 
+    -- v17.56.8: HUD Sync + AMD Context + Daily Counters
+    amd_state       TEXT        DEFAULT 'ACCUMULATION',       -- ACCUMULATION/MANIPULATION/DISTRIBUTION/MARKUP/MARKDOWN
+    sniper_today    INTEGER     DEFAULT 0,                    -- A+ SNIPER alerts fired today (HUD counter)
+    execution_today INTEGER     DEFAULT 0,                    -- EXECUTION-mode alerts fired today (HUD counter)
+
     -- Raw payload for audit
     raw_payload     TEXT,                                     -- JSON string
     version         TEXT        DEFAULT 'v17.25',

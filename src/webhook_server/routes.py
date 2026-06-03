@@ -1,12 +1,15 @@
 """
 SMC Performance Tracker — API Routes
 All webhook and REST API endpoints.
+v17.56.8: HUD Sync (amd_state) + AMD Context Awareness + Daily Counters (sniper_today / execution_today)
 v17.56.7: Dual Mode Alert System + Session Analytics + Zombie Trade Prevention
 """
 import logging
 from datetime import datetime, timezone
 from functools import wraps
 from flask import Blueprint, request, jsonify
+
+from src.version import VERSION, get_features
 
 from src.config import config
 from src.webhook_server.validators import validate_alert
@@ -84,8 +87,8 @@ def health_check():
     return jsonify({
         'status': 'ok',
         'service': 'SMC Performance Tracker',
-        'version': 'v17.56.7',
-        'features': ['dual_mode', 'session_analytics', 'zombie_prevention', 'invalid_classification'],
+        'version': VERSION,
+        'features': get_features(),
     })
 
 
@@ -166,7 +169,7 @@ def receive_signal():
         return jsonify({
             "status": "ok",
             "message": "SMC Performance Tracker Webhook Endpoint",
-            "version": "v17.56.7",
+            "version": VERSION,
             "accepts": "POST",
             "endpoint": "/api/v1/signal"
         }), 200
@@ -329,12 +332,15 @@ def list_signals():
     status = request.args.get('status')
     mode = request.args.get('mode')
     session_tag = request.args.get('session')
+    amd_state = request.args.get('amd_state')
     limit = min(int(request.args.get('limit', 100)), 500)
     offset = int(request.args.get('offset', 0))
 
     signals = get_signals(pair=pair, status=status, mode=mode,
-                          session_tag=session_tag, limit=limit, offset=offset)
-    total = count_signals(pair=pair, status=status, mode=mode, session_tag=session_tag)
+                          session_tag=session_tag, amd_state=amd_state,
+                          limit=limit, offset=offset)
+    total = count_signals(pair=pair, status=status, mode=mode,
+                          session_tag=session_tag, amd_state=amd_state)
 
     return jsonify({
         'signals': signals,
@@ -344,6 +350,7 @@ def list_signals():
         'filters': {
             'pair': pair, 'status': status,
             'mode': mode, 'session': session_tag,
+            'amd_state': amd_state,
         }
     })
 
