@@ -14,6 +14,7 @@ PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, PROJECT_ROOT)
 
 from src.config import config
+from src.version import VERSION
 from src.database import init_db
 from src.webhook_server.app import create_app
 from src.tracker.price_tracker import PriceTracker
@@ -56,7 +57,7 @@ setup_logging()
 logger = logging.getLogger(__name__)
 
 logger.info("=" * 60)
-logger.info("TradeX OIE v17.56.7 — Cloud Mode (Dual Mode Alert System)")
+logger.info(f"TradeX OIE {VERSION} — Cloud Mode (HUD Sync + AMD Context + Daily Counters)")
 logger.info("=" * 60)
 
 # Initialize database

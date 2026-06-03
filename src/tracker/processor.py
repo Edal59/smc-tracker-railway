@@ -96,6 +96,11 @@ def expand_compact_entry(data: dict) -> dict:
     session_tag = data.get('_session_tag', 'NY')
     valid = data.get('_valid', True)
 
+    # v17.56.8: Extract HUD sync fields passed through from OIE bridge
+    amd_state = data.get('_amd_state', 'ACCUMULATION')
+    sniper_today = int(data.get('_sniper_today', 0) or 0)
+    execution_today = int(data.get('_execution_today', 0) or 0)
+
     # v17.56.7: Trade classification fix — INVALID for missing SL/TP
     if entry_price == 0 or sl == 0 or tp == 0:
         initial_status = 'INVALID'
@@ -144,6 +149,10 @@ def expand_compact_entry(data: dict) -> dict:
         'mode': mode,
         'session_tag': session_tag,
         'valid': 1 if valid else 0,
+        # v17.56.8: HUD sync fields
+        'amd_state': amd_state,
+        'sniper_today': sniper_today,
+        'execution_today': execution_today,
     }
 
 

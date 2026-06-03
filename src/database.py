@@ -18,6 +18,7 @@ MIGRATION_PATH = os.path.join(PROJECT_ROOT, 'schemas', 'migrate_trade_tracking.s
 OIE_MIGRATION_PATH = os.path.join(PROJECT_ROOT, 'schemas', 'migrate_v17_14_oie.sql')
 OTE_MIGRATION_PATH = os.path.join(PROJECT_ROOT, 'schemas', 'migrate_v17_56_6_ote.sql')
 DUAL_MODE_MIGRATION_PATH = os.path.join(PROJECT_ROOT, 'schemas', 'migrate_v17_56_7_dual_mode.sql')
+HUD_SYNC_MIGRATION_PATH = os.path.join(PROJECT_ROOT, 'schemas', 'migrate_v17_56_8_hud_sync.sql')
 
 
 def get_db_path():
@@ -153,6 +154,51 @@ def _run_dual_mode_migration(conn):
     logger.info("Dual mode v17.56.7 migration complete")
 
 
+def _run_hud_sync_migration(conn):
+    """Run v17.56.8 HUD Sync migration — adds amd_state, sniper_today,
+    execution_today columns to opportunities and signals tables.
+
+    Idempotent: checks PRAGMA table_info() before each ALTER, because SQLite
+    does not support 'ALTER TABLE ... ADD COLUMN IF NOT EXISTS'.
+    """
+    hud_sync_cols = [
+        ("amd_state", "TEXT DEFAULT 'ACCUMULATION'"),
+        ("sniper_today", "INTEGER DEFAULT 0"),
+        ("execution_today", "INTEGER DEFAULT 0"),
+    ]
+
+    # opportunities table (created by the OIE migration)
+    cursor = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='opportunities'"
+    )
+    if cursor.fetchone():
+        cursor = conn.execute("PRAGMA table_info(opportunities)")
+        opp_columns = [row[1] for row in cursor.fetchall()]
+        for col_name, col_def in hud_sync_cols:
+            if col_name not in opp_columns:
+                try:
+                    conn.execute(f"ALTER TABLE opportunities ADD COLUMN {col_name} {col_def}")
+                    logger.info(f"HUD sync migration: added {col_name} to opportunities")
+                except Exception as e:
+                    logger.warning(f"HUD sync migration: column {col_name} on opportunities: {e}")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_opportunities_amd_state ON opportunities(amd_state)")
+
+    # signals table
+    cursor = conn.execute("PRAGMA table_info(signals)")
+    sig_columns = [row[1] for row in cursor.fetchall()]
+    for col_name, col_def in hud_sync_cols:
+        if col_name not in sig_columns:
+            try:
+                conn.execute(f"ALTER TABLE signals ADD COLUMN {col_name} {col_def}")
+                logger.info(f"HUD sync migration: added {col_name} to signals")
+            except Exception as e:
+                logger.warning(f"HUD sync migration: column {col_name} on signals: {e}")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_signals_amd_state ON signals(amd_state)")
+
+    conn.commit()
+    logger.info("HUD sync v17.56.8 migration complete")
+
+
 def init_db(db_path=None):
     """Initialize database with schema."""
     path = db_path or get_db_path()
@@ -172,6 +218,8 @@ def init_db(db_path=None):
         _run_ote_migration(conn)
         # Run Dual Mode migration for v17.56.7 mode/session/valid support
         _run_dual_mode_migration(conn)
+        # Run HUD Sync migration for v17.56.8 amd_state/sniper_today/execution_today support
+        _run_hud_sync_migration(conn)
         logger.info(f"Database initialized at {path}")
     finally:
         conn.close()
@@ -226,6 +274,8 @@ def insert_signal(signal_data: dict, db_path=None) -> str:
         'actual_entry_time', 'actual_exit_time', 'actual_pnl', 'trade_notes',
         # v17.56.7: Dual Mode Alert System columns
         'mode', 'session_tag', 'valid',
+        # v17.56.8: HUD Sync + AMD Context + Daily Counters
+        'amd_state', 'sniper_today', 'execution_today',
     }
 
     cols = []
@@ -277,8 +327,10 @@ def get_active_signals(db_path=None) -> list:
 
 
 def get_signals(pair=None, status=None, mode=None, session_tag=None,
-                limit=100, offset=0, db_path=None) -> list:
-    """Get signals with optional filters. v17.56.7: supports mode/session_tag."""
+                amd_state=None, limit=100, offset=0, db_path=None) -> list:
+    """Get signals with optional filters.
+    v17.56.7: supports mode/session_tag. v17.56.8: supports amd_state.
+    """
     conditions = []
     params = []
     if pair:
@@ -293,6 +345,9 @@ def get_signals(pair=None, status=None, mode=None, session_tag=None,
     if session_tag:
         conditions.append("session_tag = ?")
         params.append(session_tag)
+    if amd_state:
+        conditions.append("amd_state = ?")
+        params.append(amd_state)
     where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
     sql = f"SELECT * FROM signals {where} ORDER BY signal_timestamp DESC LIMIT ? OFFSET ?"
     params.extend([limit, offset])
@@ -301,8 +356,11 @@ def get_signals(pair=None, status=None, mode=None, session_tag=None,
     return [dict_from_row(r) for r in rows]
 
 
-def count_signals(pair=None, status=None, mode=None, session_tag=None, db_path=None) -> int:
-    """Count signals with optional filters. v17.56.7: supports mode/session_tag."""
+def count_signals(pair=None, status=None, mode=None, session_tag=None,
+                  amd_state=None, db_path=None) -> int:
+    """Count signals with optional filters.
+    v17.56.7: supports mode/session_tag. v17.56.8: supports amd_state.
+    """
     conditions = []
     params = []
     if pair:
@@ -317,6 +375,9 @@ def count_signals(pair=None, status=None, mode=None, session_tag=None, db_path=N
     if session_tag:
         conditions.append("session_tag = ?")
         params.append(session_tag)
+    if amd_state:
+        conditions.append("amd_state = ?")
+        params.append(amd_state)
     where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
     sql = f"SELECT COUNT(*) FROM signals {where}"
     with get_connection(db_path) as conn:
