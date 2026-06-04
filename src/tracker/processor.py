@@ -74,8 +74,8 @@ def expand_compact_entry(data: dict) -> dict:
     tp = float(data.get('tp', 0))
     pip_size = get_pip_size(pair)
 
-    sl_dist = abs(entry_price - sl) / pip_size
-    tp_dist = abs(tp - entry_price) / pip_size
+    sl_dist = abs(entry_price - sl) / pip_size if pip_size > 0 else 0
+    tp_dist = abs(tp - entry_price) / pip_size if pip_size > 0 else 0
 
     # Determine session from kill zone
     session = _get_session(kz_id)
@@ -90,6 +90,22 @@ def expand_compact_entry(data: dict) -> dict:
         est_dt = dt - timedelta(hours=4)  # Approx EST
         hour_est = est_dt.hour
         dow = dt.weekday()
+
+    # v17.56.7: Extract dual mode fields passed through from OIE bridge
+    mode = data.get('_mode', 'DATA')
+    session_tag = data.get('_session_tag', 'NY')
+    valid = data.get('_valid', True)
+
+    # v17.56.8: Extract HUD sync fields passed through from OIE bridge
+    amd_state = data.get('_amd_state', 'ACCUMULATION')
+    sniper_today = int(data.get('_sniper_today', 0) or 0)
+    execution_today = int(data.get('_execution_today', 0) or 0)
+
+    # v17.56.7: Trade classification fix — INVALID for missing SL/TP
+    if entry_price == 0 or sl == 0 or tp == 0:
+        initial_status = 'INVALID'
+    else:
+        initial_status = 'ACTIVE'
 
     return {
         'signal_id': data.get('id', ''),
@@ -127,8 +143,16 @@ def expand_compact_entry(data: dict) -> dict:
         'signal_hour_est': hour_est,
         'signal_day_of_week': dow,
         'session': session,
-        'status': 'ACTIVE',
+        'status': initial_status,
         'indicator_version': f"v{data.get('v', '13.4')}",
+        # v17.56.7: Dual mode fields
+        'mode': mode,
+        'session_tag': session_tag,
+        'valid': 1 if valid else 0,
+        # v17.56.8: HUD sync fields
+        'amd_state': amd_state,
+        'sniper_today': sniper_today,
+        'execution_today': execution_today,
     }
 
 
@@ -206,35 +230,54 @@ def expand_full_entry(data: dict) -> dict:
 
 
 def process_entry(data: dict) -> str:
-    """Process a SIGNAL_ENTRY alert. Returns signal_id."""
+    """Process a SIGNAL_ENTRY alert. Returns signal_id.
+    
+    v17.56.7: Handles INVALID classification for missing entry/SL/TP.
+    """
     if is_compact_format(data):
         record = expand_compact_entry(data)
     else:
         record = expand_full_entry(data)
 
-    # Validate prices
     ep = record['entry_price']
     sl = record['stop_loss']
     tp = record['take_profit']
     direction = record['direction']
 
-    if direction == 'LONG':
-        if not (sl < ep < tp):
-            logger.warning(f"Price inconsistency for LONG: SL={sl} EP={ep} TP={tp}")
-    elif direction == 'SHORT':
-        if not (tp < ep < sl):
-            logger.warning(f"Price inconsistency for SHORT: TP={tp} EP={ep} SL={sl}")
+    # v17.56.7: Trade classification fix — INVALID for missing SL/TP/entry
+    if ep == 0 or ep is None or sl == 0 or sl is None or tp == 0 or tp is None:
+        record['status'] = 'INVALID'
+        record['actual_rr'] = 0
+        record['pips_gained'] = 0
+        logger.warning(f"INVALID signal (missing prices): EP={ep} SL={sl} TP={tp}")
+    else:
+        # Validate price consistency
+        if direction == 'LONG':
+            if not (sl < ep < tp):
+                logger.warning(f"Price inconsistency for LONG: SL={sl} EP={ep} TP={tp}")
+        elif direction == 'SHORT':
+            if not (tp < ep < sl):
+                logger.warning(f"Price inconsistency for SHORT: TP={tp} EP={ep} SL={sl}")
 
     # Insert signal
     signal_id = insert_signal(record)
 
     # Log ENTRY event
-    insert_event(signal_id, 'ENTRY', event_data={
+    event_data = {
         'entry_price': ep, 'stop_loss': sl, 'take_profit': tp,
-        'direction': direction, 'poi_score': record['poi_score']
-    }, price_at_event=ep)
+        'direction': direction, 'poi_score': record['poi_score'],
+    }
+    # v17.56.7: Include mode/session in event data
+    if record.get('mode'):
+        event_data['mode'] = record['mode']
+    if record.get('session_tag'):
+        event_data['session_tag'] = record['session_tag']
 
-    logger.info(f"Processed ENTRY signal: {signal_id} ({direction} {record['pair']} @ {ep})")
+    insert_event(signal_id, 'ENTRY', event_data=event_data, price_at_event=ep)
+
+    status_tag = f" [{record['status']}]" if record['status'] == 'INVALID' else ""
+    mode_tag = f" mode={record.get('mode', 'DATA')}" if record.get('mode') else ""
+    logger.info(f"Processed ENTRY signal: {signal_id} ({direction} {record['pair']} @ {ep}){status_tag}{mode_tag}")
     return signal_id
 
 

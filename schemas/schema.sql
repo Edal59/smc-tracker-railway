@@ -67,7 +67,7 @@ CREATE TABLE IF NOT EXISTS signals (
     session             TEXT,                          -- 'London', 'New York', 'Asian', 'Overlap'
     
     -- Outcome Tracking
-    status              TEXT NOT NULL DEFAULT 'ACTIVE' CHECK(status IN ('ACTIVE', 'WON', 'LOST', 'TIMEOUT', 'GET_OUT', 'CANCELLED')),
+    status              TEXT NOT NULL DEFAULT 'ACTIVE' CHECK(status IN ('ACTIVE', 'WON', 'LOST', 'TIMEOUT', 'GET_OUT', 'CANCELLED', 'INVALID')),
     outcome_timestamp   TEXT,                          -- When TP/SL/Timeout occurred
     outcome_price       REAL,                          -- Price when outcome determined
     bars_to_outcome     INTEGER,                       -- Number of bars from entry to outcome
@@ -100,6 +100,11 @@ CREATE TABLE IF NOT EXISTS signals (
     actual_pnl          REAL,                          -- Actual P&L in pips
     trade_notes         TEXT,                          -- Notes about the trade decision
     
+    -- v17.56.8: HUD Sync + AMD Context + Daily Counters
+    amd_state           TEXT DEFAULT 'ACCUMULATION',   -- ACCUMULATION/MANIPULATION/DISTRIBUTION/MARKUP/MARKDOWN
+    sniper_today        INTEGER DEFAULT 0,             -- A+ SNIPER alerts fired today (HUD counter)
+    execution_today     INTEGER DEFAULT 0,             -- EXECUTION-mode alerts fired today (HUD counter)
+
     -- Metadata
     indicator_version   TEXT DEFAULT 'v13.4',          -- Indicator version
     timeframe           TEXT DEFAULT '15m',            -- Chart timeframe
@@ -223,6 +228,8 @@ CREATE INDEX IF NOT EXISTS idx_signals_kill_zone_id ON signals(kill_zone_id);
 CREATE INDEX IF NOT EXISTS idx_signals_amd_phase_id ON signals(amd_phase_id);
 CREATE INDEX IF NOT EXISTS idx_signals_created_at ON signals(created_at);
 CREATE INDEX IF NOT EXISTS idx_signals_trade_status ON signals(trade_status);
+-- v17.56.8: AMD state index for HUD-synced filtering
+CREATE INDEX IF NOT EXISTS idx_signals_amd_state ON signals(amd_state);
 
 -- Price ticks: Query by signal
 CREATE INDEX IF NOT EXISTS idx_price_ticks_signal_id ON price_ticks(signal_id);

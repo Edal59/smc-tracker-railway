@@ -17,6 +17,8 @@ SCHEMA_PATH = os.path.join(PROJECT_ROOT, 'schemas', 'schema.sql')
 MIGRATION_PATH = os.path.join(PROJECT_ROOT, 'schemas', 'migrate_trade_tracking.sql')
 OIE_MIGRATION_PATH = os.path.join(PROJECT_ROOT, 'schemas', 'migrate_v17_14_oie.sql')
 OTE_MIGRATION_PATH = os.path.join(PROJECT_ROOT, 'schemas', 'migrate_v17_56_6_ote.sql')
+DUAL_MODE_MIGRATION_PATH = os.path.join(PROJECT_ROOT, 'schemas', 'migrate_v17_56_7_dual_mode.sql')
+HUD_SYNC_MIGRATION_PATH = os.path.join(PROJECT_ROOT, 'schemas', 'migrate_v17_56_8_hud_sync.sql')
 
 
 def get_db_path():
@@ -101,6 +103,102 @@ def _run_ote_migration(conn):
     logger.info("OTE v17.56.6 migration complete")
 
 
+def _run_dual_mode_migration(conn):
+    """Run v17.56.7 Dual Mode migration — adds mode, session_tag, valid columns."""
+    # Check if mode column already exists in opportunities table
+    cursor = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='opportunities'"
+    )
+    if cursor.fetchone():
+        cursor = conn.execute("PRAGMA table_info(opportunities)")
+        opp_columns = [row[1] for row in cursor.fetchall()]
+
+        dual_mode_opp_cols = [
+            ("mode", "TEXT DEFAULT 'DATA'"),
+            ("session_tag", "TEXT DEFAULT 'NY'"),
+            ("valid", "INTEGER DEFAULT 1"),
+        ]
+        for col_name, col_def in dual_mode_opp_cols:
+            if col_name not in opp_columns:
+                try:
+                    conn.execute(f"ALTER TABLE opportunities ADD COLUMN {col_name} {col_def}")
+                    logger.info(f"Dual mode migration: added {col_name} to opportunities")
+                except Exception as e:
+                    logger.warning(f"Dual mode migration: column {col_name} on opportunities: {e}")
+
+        # Add indexes
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_opportunities_mode ON opportunities(mode)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_opportunities_session_tag ON opportunities(session_tag)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_opportunities_valid ON opportunities(valid)")
+
+    # Check signals table
+    cursor = conn.execute("PRAGMA table_info(signals)")
+    sig_columns = [row[1] for row in cursor.fetchall()]
+
+    dual_mode_sig_cols = [
+        ("mode", "TEXT DEFAULT 'DATA'"),
+        ("session_tag", "TEXT DEFAULT 'NY'"),
+        ("valid", "INTEGER DEFAULT 1"),
+    ]
+    for col_name, col_def in dual_mode_sig_cols:
+        if col_name not in sig_columns:
+            try:
+                conn.execute(f"ALTER TABLE signals ADD COLUMN {col_name} {col_def}")
+                logger.info(f"Dual mode migration: added {col_name} to signals")
+            except Exception as e:
+                logger.warning(f"Dual mode migration: column {col_name} on signals: {e}")
+
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_signals_mode ON signals(mode)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_signals_session_tag ON signals(session_tag)")
+    conn.commit()
+    logger.info("Dual mode v17.56.7 migration complete")
+
+
+def _run_hud_sync_migration(conn):
+    """Run v17.56.8 HUD Sync migration — adds amd_state, sniper_today,
+    execution_today columns to opportunities and signals tables.
+
+    Idempotent: checks PRAGMA table_info() before each ALTER, because SQLite
+    does not support 'ALTER TABLE ... ADD COLUMN IF NOT EXISTS'.
+    """
+    hud_sync_cols = [
+        ("amd_state", "TEXT DEFAULT 'ACCUMULATION'"),
+        ("sniper_today", "INTEGER DEFAULT 0"),
+        ("execution_today", "INTEGER DEFAULT 0"),
+    ]
+
+    # opportunities table (created by the OIE migration)
+    cursor = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='opportunities'"
+    )
+    if cursor.fetchone():
+        cursor = conn.execute("PRAGMA table_info(opportunities)")
+        opp_columns = [row[1] for row in cursor.fetchall()]
+        for col_name, col_def in hud_sync_cols:
+            if col_name not in opp_columns:
+                try:
+                    conn.execute(f"ALTER TABLE opportunities ADD COLUMN {col_name} {col_def}")
+                    logger.info(f"HUD sync migration: added {col_name} to opportunities")
+                except Exception as e:
+                    logger.warning(f"HUD sync migration: column {col_name} on opportunities: {e}")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_opportunities_amd_state ON opportunities(amd_state)")
+
+    # signals table
+    cursor = conn.execute("PRAGMA table_info(signals)")
+    sig_columns = [row[1] for row in cursor.fetchall()]
+    for col_name, col_def in hud_sync_cols:
+        if col_name not in sig_columns:
+            try:
+                conn.execute(f"ALTER TABLE signals ADD COLUMN {col_name} {col_def}")
+                logger.info(f"HUD sync migration: added {col_name} to signals")
+            except Exception as e:
+                logger.warning(f"HUD sync migration: column {col_name} on signals: {e}")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_signals_amd_state ON signals(amd_state)")
+
+    conn.commit()
+    logger.info("HUD sync v17.56.8 migration complete")
+
+
 def init_db(db_path=None):
     """Initialize database with schema."""
     path = db_path or get_db_path()
@@ -118,6 +216,10 @@ def init_db(db_path=None):
         _run_oie_migration(conn)
         # Run OTE migration for v17.56.6 POI /6 + OTE support
         _run_ote_migration(conn)
+        # Run Dual Mode migration for v17.56.7 mode/session/valid support
+        _run_dual_mode_migration(conn)
+        # Run HUD Sync migration for v17.56.8 amd_state/sniper_today/execution_today support
+        _run_hud_sync_migration(conn)
         logger.info(f"Database initialized at {path}")
     finally:
         conn.close()
@@ -170,6 +272,10 @@ def insert_signal(signal_data: dict, db_path=None) -> str:
         'actual_rr', 'pips_gained',
         'trade_status', 'actual_entry_price', 'actual_exit_price',
         'actual_entry_time', 'actual_exit_time', 'actual_pnl', 'trade_notes',
+        # v17.56.7: Dual Mode Alert System columns
+        'mode', 'session_tag', 'valid',
+        # v17.56.8: HUD Sync + AMD Context + Daily Counters
+        'amd_state', 'sniper_today', 'execution_today',
     }
 
     cols = []
@@ -220,7 +326,11 @@ def get_active_signals(db_path=None) -> list:
     return [dict_from_row(r) for r in rows]
 
 
-def get_signals(pair=None, status=None, limit=100, offset=0, db_path=None) -> list:
+def get_signals(pair=None, status=None, mode=None, session_tag=None,
+                amd_state=None, limit=100, offset=0, db_path=None) -> list:
+    """Get signals with optional filters.
+    v17.56.7: supports mode/session_tag. v17.56.8: supports amd_state.
+    """
     conditions = []
     params = []
     if pair:
@@ -229,6 +339,15 @@ def get_signals(pair=None, status=None, limit=100, offset=0, db_path=None) -> li
     if status:
         conditions.append("status = ?")
         params.append(status)
+    if mode:
+        conditions.append("mode = ?")
+        params.append(mode)
+    if session_tag:
+        conditions.append("session_tag = ?")
+        params.append(session_tag)
+    if amd_state:
+        conditions.append("amd_state = ?")
+        params.append(amd_state)
     where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
     sql = f"SELECT * FROM signals {where} ORDER BY signal_timestamp DESC LIMIT ? OFFSET ?"
     params.extend([limit, offset])
@@ -237,7 +356,11 @@ def get_signals(pair=None, status=None, limit=100, offset=0, db_path=None) -> li
     return [dict_from_row(r) for r in rows]
 
 
-def count_signals(pair=None, status=None, db_path=None) -> int:
+def count_signals(pair=None, status=None, mode=None, session_tag=None,
+                  amd_state=None, db_path=None) -> int:
+    """Count signals with optional filters.
+    v17.56.7: supports mode/session_tag. v17.56.8: supports amd_state.
+    """
     conditions = []
     params = []
     if pair:
@@ -246,6 +369,15 @@ def count_signals(pair=None, status=None, db_path=None) -> int:
     if status:
         conditions.append("status = ?")
         params.append(status)
+    if mode:
+        conditions.append("mode = ?")
+        params.append(mode)
+    if session_tag:
+        conditions.append("session_tag = ?")
+        params.append(session_tag)
+    if amd_state:
+        conditions.append("amd_state = ?")
+        params.append(amd_state)
     where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
     sql = f"SELECT COUNT(*) FROM signals {where}"
     with get_connection(db_path) as conn:
@@ -549,7 +681,8 @@ def _empty_analytics():
     }
 
 
-def get_signals_for_analysis(pair=None, days=None, db_path=None) -> list:
+def get_signals_for_analysis(pair=None, days=None, mode=None, session_tag=None, db_path=None) -> list:
+    """Get resolved signals for analysis. Supports v17.56.7 mode/session filters."""
     conditions = ["status IN ('WON', 'LOST', 'TIMEOUT', 'GET_OUT')"]
     params = []
     if pair and pair != 'ALL':
@@ -557,8 +690,67 @@ def get_signals_for_analysis(pair=None, days=None, db_path=None) -> list:
         params.append(pair)
     if days:
         conditions.append(f"signal_timestamp >= datetime('now', '-{int(days)} days')")
+    if mode:
+        conditions.append("mode = ?")
+        params.append(mode)
+    if session_tag:
+        conditions.append("session_tag = ?")
+        params.append(session_tag)
     where = f"WHERE {' AND '.join(conditions)}"
     sql = f"SELECT * FROM signals {where} ORDER BY signal_timestamp"
     with get_connection(db_path) as conn:
         rows = conn.execute(sql, params).fetchall()
     return [dict_from_row(r) for r in rows]
+
+
+def get_performance_summary_filtered(pair=None, days=None, mode=None, session_tag=None, db_path=None) -> dict:
+    """
+    v17.56.7: Performance summary with mode/session filtering.
+    Used for EXECUTION-only stats and session-based analytics.
+    """
+    conditions = ["status IN ('WON', 'LOST', 'TIMEOUT', 'GET_OUT')"]
+    params = []
+    if pair and pair != 'ALL':
+        conditions.append("pair = ?")
+        params.append(pair)
+    if days:
+        conditions.append(f"signal_timestamp >= datetime('now', '-{int(days)} days')")
+    if mode:
+        conditions.append("mode = ?")
+        params.append(mode)
+    if session_tag:
+        conditions.append("session_tag = ?")
+        params.append(session_tag)
+    where = f"WHERE {' AND '.join(conditions)}"
+
+    sql = f"""
+    SELECT
+        COUNT(*) as total_signals,
+        SUM(CASE WHEN status = 'WON' THEN 1 ELSE 0 END) as wins,
+        SUM(CASE WHEN status = 'LOST' THEN 1 ELSE 0 END) as losses,
+        SUM(CASE WHEN status = 'TIMEOUT' THEN 1 ELSE 0 END) as timeouts,
+        SUM(CASE WHEN status = 'GET_OUT' THEN 1 ELSE 0 END) as get_outs,
+        SUM(CASE WHEN status = 'INVALID' THEN 1 ELSE 0 END) as invalids,
+        AVG(CASE WHEN status = 'WON' THEN actual_rr ELSE NULL END) as avg_rr_won,
+        AVG(CASE WHEN status = 'LOST' THEN actual_rr ELSE NULL END) as avg_rr_lost,
+        AVG(CASE WHEN status = 'WON' THEN pips_gained ELSE NULL END) as avg_pips_won,
+        AVG(CASE WHEN status = 'LOST' THEN pips_gained ELSE NULL END) as avg_pips_lost,
+        AVG(actual_rr) as avg_rr_overall,
+        SUM(COALESCE(pips_gained, 0)) as total_pips
+    FROM signals {where}
+    """
+    with get_connection(db_path) as conn:
+        row = conn.execute(sql, params).fetchone()
+    if not row or row['total_signals'] == 0:
+        return {'total_signals': 0, 'wins': 0, 'losses': 0, 'win_rate': 0.0,
+                'avg_rr': 0.0, 'expectancy': 0.0, 'total_pips': 0.0}
+    result = dict_from_row(row)
+    w = result['wins'] or 0
+    l = result['losses'] or 0
+    result['win_rate'] = round((w / (w + l) * 100), 1) if (w + l) > 0 else 0.0
+    wr = w / (w + l) if (w + l) > 0 else 0
+    avg_win = result['avg_rr_won'] or 0
+    avg_loss = abs(result['avg_rr_lost'] or 0)
+    result['expectancy'] = round((wr * avg_win) - ((1 - wr) * avg_loss), 3)
+    result['avg_rr'] = round(result['avg_rr_overall'] or 0, 2)
+    return result
