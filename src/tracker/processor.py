@@ -101,6 +101,10 @@ def expand_compact_entry(data: dict) -> dict:
     sniper_today = int(data.get('_sniper_today', 0) or 0)
     execution_today = int(data.get('_execution_today', 0) or 0)
 
+    # v17.56.9: Extract Guardian HTF-gating fields passed through from OIE bridge
+    guardian_label = data.get('_guardian_label')
+    guardian_risk = int(data.get('_guardian_risk', 0) or 0)
+
     # v17.56.7: Trade classification fix — INVALID for missing SL/TP
     if entry_price == 0 or sl == 0 or tp == 0:
         initial_status = 'INVALID'
@@ -153,6 +157,9 @@ def expand_compact_entry(data: dict) -> dict:
         'amd_state': amd_state,
         'sniper_today': sniper_today,
         'execution_today': execution_today,
+        # v17.56.9: Guardian HTF-gating fields
+        'guardian_label': guardian_label,
+        'guardian_risk': guardian_risk,
     }
 
 
