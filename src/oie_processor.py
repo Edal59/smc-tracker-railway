@@ -1,11 +1,20 @@
 """
 TradeX Tracker — Opportunity Intelligence Engine (OIE) Processor
-Version: v17.56.9
+Version: v17.57
 
 Normalizes incoming webhook payloads from TradingView alert() calls into
 clean opportunity records with human-readable decoded fields. Supports
-v17.56.9 (Guardian HTF-gating), v17.56.8 (HUD sync), v17.56.7 (dual mode),
-v17.56.6, v17.54.x, v17.25, and legacy formats.
+v17.57 (PDH/PDL liquidity), v17.56.9 (Guardian HTF-gating), v17.56.8 (HUD sync),
+v17.56.7 (dual mode), v17.56.6, v17.54.x, v17.25, and legacy formats.
+
+v17.57 additions (PDH/PDL institutional liquidity levels):
+- pdh: Previous Day High price level (float)
+- pdl: Previous Day Low price level (float)
+- near_pdh / near_pdl: price within 15% of the PDH-PDL range (bool)
+- pdh_swept / pdl_swept: the level was swept (bool)
+- Optional on the wire; missing/invalid fields default to (0.0 / False).
+- IN-MEMORY ONLY — these ephemeral daily reference levels are NOT persisted
+  to the database (no schema change). Fully backward compatible.
 
 v17.56.9 additions (Guardian HTF-gating):
 - guardian_label: full Guardian label incl. HTF warnings
@@ -308,9 +317,10 @@ def validate_oie_payload(payload: dict) -> tuple:
 # ============================================================================
 
 def _is_v17_56_7_payload(payload: dict) -> bool:
-    """Detect v17.56.7+ dual-mode payload format (v17.56.7, v17.56.8 and v17.56.9)."""
+    """Detect v17.56.7+ dual-mode payload format (v17.56.7/56.8/56.9 and v17.57)."""
     return ("direction" in payload and "setup" in payload
-            and payload.get("version", "").startswith(("v17.56.7", "v17.56.8", "v17.56.9")))
+            and payload.get("version", "").startswith(
+                ("v17.56.7", "v17.56.8", "v17.56.9", "v17.57")))
 
 
 def _is_v17_56_8_payload(payload: dict) -> bool:
@@ -388,6 +398,13 @@ def normalize_v17_56_7_payload(payload: dict) -> dict:
         # v17.56.9: Guardian HTF-gating fields
         "guardian_label": guardian_label,
         "guardian_risk": guardian_risk,
+        # v17.57: PDH/PDL liquidity passthrough (parsed by normalize_oie_payload)
+        "pdh": payload.get("pdh"),
+        "pdl": payload.get("pdl"),
+        "near_pdh": payload.get("near_pdh"),
+        "near_pdl": payload.get("near_pdl"),
+        "pdh_swept": payload.get("pdh_swept"),
+        "pdl_swept": payload.get("pdl_swept"),
         # Carry forward standard fields
         "h4_bias": payload.get("h4_bias", payload.get("htf_bias", "")),
         "poi": payload.get("poi"),
@@ -502,6 +519,16 @@ def normalize_oie_payload(payload: dict) -> dict:
     guardian_label = payload.get("guardian_label")
     guardian_risk = normalize_guardian_risk(payload.get("guardian_risk"))
 
+    # --- v17.57: PDH/PDL institutional liquidity levels (optional, in-memory only) ---
+    # These ephemeral daily reference levels are NOT persisted to the DB; they are
+    # parsed safely (defaults 0.0 / False) and carried in-memory for real-time use.
+    pdh = _to_float(payload.get("pdh"), 0.0)
+    pdl = _to_float(payload.get("pdl"), 0.0)
+    near_pdh = bool(_to_int(payload.get("near_pdh"), 0))
+    near_pdl = bool(_to_int(payload.get("near_pdl"), 0))
+    pdh_swept = bool(_to_int(payload.get("pdh_swept"), 0))
+    pdl_swept = bool(_to_int(payload.get("pdl_swept"), 0))
+
     result = {
         "pair": symbol,
         "direction": direction,
@@ -538,6 +565,13 @@ def normalize_oie_payload(payload: dict) -> dict:
         # v17.56.9: Guardian HTF-gating fields
         "guardian_label": guardian_label,
         "guardian_risk": guardian_risk,
+        # v17.57: PDH/PDL liquidity levels (in-memory only; NOT persisted to DB)
+        "pdh": pdh,
+        "pdl": pdl,
+        "near_pdh": near_pdh,
+        "near_pdl": near_pdl,
+        "pdh_swept": pdh_swept,
+        "pdl_swept": pdl_swept,
     }
 
     return result
@@ -646,11 +680,41 @@ def oie_to_legacy_compact(payload: dict) -> dict:
 # version-aware decoding surface (and guarantee backward compatibility).
 # ============================================================================
 
+def _apply_pdh_pdl_fields(payload: dict, record: dict) -> None:
+    """Parse the optional v17.57 PDH/PDL liquidity fields into ``record``.
+
+    IN-MEMORY ONLY — these ephemeral daily reference levels are NOT persisted
+    to the database. Missing or invalid values fall back to safe defaults
+    (0.0 for the price levels, False for the boolean flags). Calling this on an
+    older payload (which lacks the fields) simply applies the defaults, which is
+    how backward compatibility is guaranteed.
+    """
+    record["pdh"] = _to_float(payload.get("pdh"), 0.0)
+    record["pdl"] = _to_float(payload.get("pdl"), 0.0)
+    record["near_pdh"] = bool(_to_int(payload.get("near_pdh"), 0))
+    record["near_pdl"] = bool(_to_int(payload.get("near_pdl"), 0))
+    record["pdh_swept"] = bool(_to_int(payload.get("pdh_swept"), 0))
+    record["pdl_swept"] = bool(_to_int(payload.get("pdl_swept"), 0))
+
+
+def decode_v17_57_payload(payload: dict) -> dict:
+    """Decode a v17.57 payload (PDH/PDL liquidity fields) into a record.
+
+    Parses the new v17.57 fields (pdh, pdl, near_pdh, near_pdl, pdh_swept,
+    pdl_swept) in addition to all existing v17.56.9 Guardian, v17.56.8 HUD-sync
+    and v17.56.7 dual-mode fields. PDH/PDL are in-memory only (not persisted).
+    """
+    record = decode_v17_56_9_payload(payload)
+    _apply_pdh_pdl_fields(payload, record)
+    return record
+
+
 def decode_v17_56_9_payload(payload: dict) -> dict:
     """Decode a v17.56.9 payload (Guardian HTF-gating fields) into a record.
 
     Parses the new v17.56.9 fields (guardian_label, guardian_risk) in addition
-    to all existing v17.56.8 HUD-sync and v17.56.7 dual-mode fields.
+    to all existing v17.56.8 HUD-sync and v17.56.7 dual-mode fields. The v17.57
+    PDH/PDL fields default to 0.0 / False for backward compatibility.
     """
     record = normalize_oie_payload(payload)
     # Guarantee the v17.56.8 fields are present and validated.
@@ -660,6 +724,8 @@ def decode_v17_56_9_payload(payload: dict) -> dict:
     # Guarantee the v17.56.9 Guardian fields are present and validated.
     record.setdefault("guardian_label", None)
     record["guardian_risk"] = normalize_guardian_risk(record.get("guardian_risk"))
+    # v17.57 PDH/PDL fields default (parsed from payload if present, else 0.0/False).
+    _apply_pdh_pdl_fields(payload, record)
     return record
 
 
@@ -678,6 +744,8 @@ def decode_v17_56_8_payload(payload: dict) -> dict:
     # Guardian fields default for v17.56.8 payloads (which lack them).
     record.setdefault("guardian_label", None)
     record["guardian_risk"] = normalize_guardian_risk(record.get("guardian_risk"))
+    # v17.57 PDH/PDL fields default to 0.0 / False (parsed if present).
+    _apply_pdh_pdl_fields(payload, record)
     return record
 
 
@@ -694,6 +762,8 @@ def decode_v17_56_7_payload(payload: dict) -> dict:
     record["amd_state"] = normalize_amd_state(record.get("amd_state"))
     record.setdefault("guardian_label", None)
     record["guardian_risk"] = normalize_guardian_risk(record.get("guardian_risk"))
+    # v17.57 PDH/PDL fields default to 0.0 / False (parsed if present).
+    _apply_pdh_pdl_fields(payload, record)
     return record
 
 
@@ -709,6 +779,8 @@ def decode_legacy_payload(payload: dict) -> dict:
     record.setdefault("execution_today", 0)
     record.setdefault("guardian_label", None)
     record["guardian_risk"] = normalize_guardian_risk(record.get("guardian_risk"))
+    # v17.57 PDH/PDL fields default to 0.0 / False (parsed if present).
+    _apply_pdh_pdl_fields(payload, record)
     return record
 
 
@@ -722,7 +794,9 @@ def decode_payload(payload: dict) -> dict:
     """
     version = str(payload.get("version", "unknown"))
 
-    if version.startswith("v17.56.9"):
+    if version.startswith("v17.57"):
+        return decode_v17_57_payload(payload)
+    elif version.startswith("v17.56.9"):
         return decode_v17_56_9_payload(payload)
     elif version.startswith("v17.56.8"):
         return decode_v17_56_8_payload(payload)

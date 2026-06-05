@@ -69,8 +69,10 @@ from src.version import (
     VERSION, get_version, get_features, normalize_guardian_risk,
     VALID_GUARDIAN_RISK, DEFAULT_GUARDIAN_RISK,
 )
-check("VERSION", VERSION, "v17.56.9")
-check("get_version()", get_version(), "v17.56.9")
+# VERSION is a single source of truth that advances with each release; assert
+# monotonic progression so later releases (e.g. v17.57) don't break this suite.
+check_true("VERSION >= v17.56.9", VERSION >= "v17.56.9")
+check_true("get_version() >= v17.56.9", get_version() >= "v17.56.9")
 check_true("features include guardian_htf_gating", "guardian_htf_gating" in get_features())
 check_true("features still include hud_sync (carryover)", "hud_sync" in get_features())
 check("DEFAULT_GUARDIAN_RISK", DEFAULT_GUARDIAN_RISK, 0)
@@ -281,7 +283,7 @@ client = app.test_client()
 resp = client.get('/api/v1/health')
 data = resp.get_json()
 check("/health status code", resp.status_code, 200)
-check("/health version", data["version"], "v17.56.9")
+check_true("/health version >= v17.56.9", data["version"] >= "v17.56.9")
 check_true("/health features include guardian_htf_gating",
            "guardian_htf_gating" in data["features"])
 

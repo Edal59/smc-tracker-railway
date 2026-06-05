@@ -1,6 +1,7 @@
 """
 SMC Performance Tracker — API Routes
 All webhook and REST API endpoints.
+v17.57: PDH/PDL Institutional Liquidity Levels (pdh / pdl / near_pdh / near_pdl / pdh_swept / pdl_swept) — in-memory only, exposed via /latest
 v17.56.9: Guardian HTF-Gating (guardian_label / guardian_risk) + HTF-counter Standby awareness
 v17.56.8: HUD Sync (amd_state) + AMD Context Awareness + Daily Counters (sniper_today / execution_today)
 v17.56.7: Dual Mode Alert System + Session Analytics + Zombie Trade Prevention
@@ -31,6 +32,47 @@ from src.analytics.reports import generate_json_report, generate_csv_signals
 logger = logging.getLogger(__name__)
 
 api_bp = Blueprint('api', __name__)
+
+
+# ============================================================
+# v17.57: In-memory PDH/PDL liquidity cache
+# ------------------------------------------------------------
+# The PDH/PDL institutional liquidity levels are ephemeral daily
+# reference values and are deliberately NOT persisted to the database.
+# We keep only the most recent signal's curated snapshot in memory so it
+# can be surfaced via GET /latest. This resets on every process restart.
+# ============================================================
+
+_LATEST_SIGNAL = {}
+
+
+def _update_latest_signal(opp_record: dict) -> None:
+    """Cache a curated snapshot of the most recent OIE signal in memory.
+
+    Includes the v17.57 PDH/PDL liquidity fields. The raw payload is
+    intentionally excluded to keep the snapshot small and JSON-safe.
+    """
+    global _LATEST_SIGNAL
+    try:
+        _LATEST_SIGNAL = {
+            'pair': opp_record.get('pair'),
+            'direction': opp_record.get('direction'),
+            'setup_type': opp_record.get('setup_type'),
+            'mode': opp_record.get('mode'),
+            'session': opp_record.get('session_tag'),
+            'poi_score': opp_record.get('poi_score'),
+            'poi_max': opp_record.get('poi_max', 6),
+            # v17.57 PDH/PDL institutional liquidity levels (in-memory only)
+            'pdh': opp_record.get('pdh', 0.0),
+            'pdl': opp_record.get('pdl', 0.0),
+            'near_pdh': bool(opp_record.get('near_pdh', False)),
+            'near_pdl': bool(opp_record.get('near_pdl', False)),
+            'pdh_swept': bool(opp_record.get('pdh_swept', False)),
+            'pdl_swept': bool(opp_record.get('pdl_swept', False)),
+            'received_at': datetime.now(timezone.utc).isoformat(),
+        }
+    except Exception as e:  # never let caching break the webhook path
+        logger.warning(f"[v17.57] Failed to update latest-signal cache: {e}")
 
 
 # ============================================================
@@ -238,6 +280,10 @@ def receive_signal():
 
             opp_id = insert_opportunity(opp_record)
 
+            # v17.57: cache the curated snapshot (incl. PDH/PDL liquidity) in
+            # memory so GET /latest can surface the ephemeral, non-persisted levels.
+            _update_latest_signal(opp_record)
+
             # 2. Also feed into legacy signals pipeline for backward compat
             legacy_data = oie_to_legacy_compact(data)
             try:
@@ -281,6 +327,13 @@ def receive_signal():
                 'has_ote': opp_record.get('has_ote', False),
                 'mode': opp_record.get('mode', 'DATA'),
                 'session': opp_record.get('session_tag', 'NY'),
+                # v17.57: PDH/PDL institutional liquidity levels (in-memory only)
+                'pdh': opp_record.get('pdh', 0.0),
+                'pdl': opp_record.get('pdl', 0.0),
+                'near_pdh': bool(opp_record.get('near_pdh', False)),
+                'near_pdl': bool(opp_record.get('near_pdl', False)),
+                'pdh_swept': bool(opp_record.get('pdh_swept', False)),
+                'pdl_swept': bool(opp_record.get('pdl_swept', False)),
                 'legacy_signal_id': legacy_signal_id,
             }), 200
 
@@ -322,6 +375,24 @@ def receive_signal():
 # ============================================================
 # Signal Queries
 # ============================================================
+
+@api_bp.route('/latest', methods=['GET'])
+@require_api_key
+def latest_signal():
+    """Return the most recent signal's in-memory snapshot.
+
+    v17.57: This is the canonical way to read the ephemeral PDH/PDL
+    institutional liquidity levels (pdh / pdl / near_pdh / near_pdl /
+    pdh_swept / pdl_swept). Those fields are NOT persisted to the database,
+    so the /signals endpoint (which reads from the DB) will not contain them.
+    Returns ``{'signal': null}`` until the first OIE signal is received, and
+    resets on process restart.
+    """
+    return jsonify({
+        'signal': _LATEST_SIGNAL or None,
+        'version': VERSION,
+    })
+
 
 @api_bp.route('/signals', methods=['GET'])
 @require_api_key
