@@ -1,6 +1,7 @@
 """
 SMC Performance Tracker — API Routes
 All webhook and REST API endpoints.
+v17.59: EMERGENCY FIX — Trend Override Logic (htf_override_active / ltf_override_active / htf_trend_final / ltf_trend_final) + Range Debug (range_anchor_time / range_force_expanded) + AMD Velocity (amd_velocity) + Strong Trend Mode (strong_trend_mode) — in-memory only (NO DB migration), exposed via /latest and POST /signal echo
 v17.58: Sequence State Machine (sequence_state / sequence_step / missing_step / sequence_complete + 5 state flags) + BOS-Anchored Ranges (bos_range_high / bos_range_low / bos_equilibrium / bos_trend) + liquidity/shift detection flags — PERSISTED, exposed via /signals and /sequence-analytics
 v17.57: PDH/PDL Institutional Liquidity Levels (pdh / pdl / near_pdh / near_pdl / pdh_swept / pdl_swept) — in-memory only, exposed via /latest
 v17.56.9: Guardian HTF-Gating (guardian_label / guardian_risk) + HTF-counter Standby awareness
@@ -88,6 +89,15 @@ def _update_latest_signal(opp_record: dict) -> None:
             'ltf_shift_detected': bool(opp_record.get('ltf_shift_detected', False)),
             'displacement_detected': bool(opp_record.get('displacement_detected', False)),
             'mitigation_zone': bool(opp_record.get('mitigation_zone', False)),
+            # v17.59 trend override + AMD velocity (EMERGENCY FIX, in-memory only)
+            'htf_override_active': bool(opp_record.get('htf_override_active', False)),
+            'ltf_override_active': bool(opp_record.get('ltf_override_active', False)),
+            'htf_trend_final': opp_record.get('htf_trend_final', 0),
+            'ltf_trend_final': opp_record.get('ltf_trend_final', 0),
+            'range_anchor_time': opp_record.get('range_anchor_time', ''),
+            'range_force_expanded': bool(opp_record.get('range_force_expanded', False)),
+            'amd_velocity': opp_record.get('amd_velocity', 0.0),
+            'strong_trend_mode': opp_record.get('strong_trend_mode', 'NONE'),
             'received_at': datetime.now(timezone.utc).isoformat(),
         }
     except Exception as e:  # never let caching break the webhook path
@@ -362,6 +372,15 @@ def receive_signal():
                 'bos_range_low': opp_record.get('bos_range_low', 0.0),
                 'bos_equilibrium': opp_record.get('bos_equilibrium', 0.0),
                 'bos_trend': opp_record.get('bos_trend', 0),
+                # v17.59: Trend override + AMD velocity (EMERGENCY FIX, in-memory only)
+                'htf_override_active': bool(opp_record.get('htf_override_active', False)),
+                'ltf_override_active': bool(opp_record.get('ltf_override_active', False)),
+                'htf_trend_final': opp_record.get('htf_trend_final', 0),
+                'ltf_trend_final': opp_record.get('ltf_trend_final', 0),
+                'range_anchor_time': opp_record.get('range_anchor_time', ''),
+                'range_force_expanded': bool(opp_record.get('range_force_expanded', False)),
+                'amd_velocity': opp_record.get('amd_velocity', 0.0),
+                'strong_trend_mode': opp_record.get('strong_trend_mode', 'NONE'),
                 'legacy_signal_id': legacy_signal_id,
             }), 200
 

@@ -7,7 +7,7 @@ payload defaults, and database records.
 """
 
 # Single source of truth for the backend version.
-VERSION = "v17.58"
+VERSION = "v17.59"
 
 # Feature flags advertised by the /health endpoint.
 FEATURES = [
@@ -22,6 +22,8 @@ FEATURES = [
     "pdh_pdl_liquidity",  # NEW in v17.57
     "bos_anchored_ranges",  # NEW in v17.58
     "sequence_state_machine",  # NEW in v17.58
+    "trend_override_logic",  # NEW in v17.59 (emergency fix)
+    "amd_velocity_detection",  # NEW in v17.59 (emergency fix)
 ]
 
 # Valid AMD (Accumulation-Manipulation-Distribution) market states.
@@ -128,3 +130,29 @@ def normalize_bos_trend(value, default: int = DEFAULT_BOS_TREND) -> int:
     except (TypeError, ValueError):
         return default
     return trend if trend in VALID_BOS_TRENDS else default
+
+
+# ============================================================
+# v17.59: Trend Override Logic & AMD Velocity (EMERGENCY FIX)
+# ------------------------------------------------------------
+# Emergency fix for inverted entry logic during strong directional
+# trends. The indicator now reports HTF/LTF trend-override state and
+# an AMD velocity reading (as a % of ATR) so the backend can surface
+# a "strong trend mode" context. These fields are IN-MEMORY ONLY:
+# they are echoed on the API/latest snapshot but NOT persisted to the
+# database (no schema migration required).
+#   strong_trend_mode: BEARISH | BULLISH | NONE
+# ============================================================
+VALID_STRONG_TREND_MODES = ("BEARISH", "BULLISH", "NONE")
+DEFAULT_STRONG_TREND_MODE = "NONE"
+
+
+def normalize_strong_trend_mode(value, default: str = DEFAULT_STRONG_TREND_MODE) -> str:
+    """Validate/normalize a strong_trend_mode string to {BEARISH, BULLISH, NONE}.
+
+    Anything unrecognised or missing falls back to the default (NONE).
+    """
+    if value is None:
+        return default
+    mode = str(value).upper().strip()
+    return mode if mode in VALID_STRONG_TREND_MODES else default
