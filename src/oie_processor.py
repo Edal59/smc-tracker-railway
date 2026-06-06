@@ -48,6 +48,8 @@ from src.database import get_pip_size
 from src.version import (
     VERSION, normalize_amd_state, DEFAULT_AMD_STATE,
     normalize_guardian_risk, DEFAULT_GUARDIAN_RISK,
+    normalize_sequence_state, DEFAULT_SEQUENCE_STATE,
+    normalize_bos_trend, DEFAULT_BOS_TREND,
 )
 
 logger = logging.getLogger(__name__)
@@ -529,6 +531,27 @@ def normalize_oie_payload(payload: dict) -> dict:
     pdh_swept = bool(_to_int(payload.get("pdh_swept"), 0))
     pdl_swept = bool(_to_int(payload.get("pdl_swept"), 0))
 
+    # --- v17.58: Sequence state machine + BOS-anchored ranges (PERSISTED) ---
+    # Unlike the v17.57 PDH/PDL levels, these fields ARE persisted to the DB.
+    # Missing/invalid values fall back to safe defaults for backward compat.
+    sequence_state = normalize_sequence_state(payload.get("sequence_state"))
+    sequence_step = payload.get("sequence_step")
+    missing_step = payload.get("missing_step")
+    sequence_complete = bool(_to_int(payload.get("sequence_complete"), 0))
+    bos_range_high = _to_float(payload.get("bos_range_high"), 0.0)
+    bos_range_low = _to_float(payload.get("bos_range_low"), 0.0)
+    bos_equilibrium = _to_float(payload.get("bos_equilibrium"), 0.0)
+    bos_trend = normalize_bos_trend(payload.get("bos_trend"))
+    state1_location = bool(_to_int(payload.get("state1_location"), 0))
+    state2_liquidity = bool(_to_int(payload.get("state2_liquidity"), 0))
+    state3_displacement = bool(_to_int(payload.get("state3_displacement"), 0))
+    state4_mitigation = bool(_to_int(payload.get("state4_mitigation"), 0))
+    state5_execution = bool(_to_int(payload.get("state5_execution"), 0))
+    liquidity_swept = bool(_to_int(payload.get("liquidity_swept"), 0))
+    ltf_shift_detected = bool(_to_int(payload.get("ltf_shift_detected"), 0))
+    displacement_detected = bool(_to_int(payload.get("displacement_detected"), 0))
+    mitigation_zone = bool(_to_int(payload.get("mitigation_zone"), 0))
+
     result = {
         "pair": symbol,
         "direction": direction,
@@ -572,6 +595,24 @@ def normalize_oie_payload(payload: dict) -> dict:
         "near_pdl": near_pdl,
         "pdh_swept": pdh_swept,
         "pdl_swept": pdl_swept,
+        # v17.58: Sequence state machine + BOS-anchored ranges (PERSISTED to DB)
+        "sequence_state": sequence_state,
+        "sequence_step": sequence_step,
+        "missing_step": missing_step,
+        "sequence_complete": sequence_complete,
+        "bos_range_high": bos_range_high,
+        "bos_range_low": bos_range_low,
+        "bos_equilibrium": bos_equilibrium,
+        "bos_trend": bos_trend,
+        "state1_location": state1_location,
+        "state2_liquidity": state2_liquidity,
+        "state3_displacement": state3_displacement,
+        "state4_mitigation": state4_mitigation,
+        "state5_execution": state5_execution,
+        "liquidity_swept": liquidity_swept,
+        "ltf_shift_detected": ltf_shift_detected,
+        "displacement_detected": displacement_detected,
+        "mitigation_zone": mitigation_zone,
     }
 
     return result
@@ -629,6 +670,25 @@ def oie_to_legacy_compact(payload: dict) -> dict:
     guardian_label = payload.get("guardian_label")
     guardian_risk = normalize_guardian_risk(payload.get("guardian_risk"))
 
+    # v17.58: Extract sequence state machine + BOS range fields for passthrough
+    sequence_state = normalize_sequence_state(payload.get("sequence_state"))
+    sequence_step = payload.get("sequence_step")
+    missing_step = payload.get("missing_step")
+    sequence_complete = bool(_to_int(payload.get("sequence_complete"), 0))
+    bos_range_high = _to_float(payload.get("bos_range_high"), 0.0)
+    bos_range_low = _to_float(payload.get("bos_range_low"), 0.0)
+    bos_equilibrium = _to_float(payload.get("bos_equilibrium"), 0.0)
+    bos_trend = normalize_bos_trend(payload.get("bos_trend"))
+    state1_location = bool(_to_int(payload.get("state1_location"), 0))
+    state2_liquidity = bool(_to_int(payload.get("state2_liquidity"), 0))
+    state3_displacement = bool(_to_int(payload.get("state3_displacement"), 0))
+    state4_mitigation = bool(_to_int(payload.get("state4_mitigation"), 0))
+    state5_execution = bool(_to_int(payload.get("state5_execution"), 0))
+    liquidity_swept = bool(_to_int(payload.get("liquidity_swept"), 0))
+    ltf_shift_detected = bool(_to_int(payload.get("ltf_shift_detected"), 0))
+    displacement_detected = bool(_to_int(payload.get("displacement_detected"), 0))
+    mitigation_zone = bool(_to_int(payload.get("mitigation_zone"), 0))
+
     # Decode h4_bias — handle both string and numeric forms
     raw_h4 = payload.get("h4_bias", 0)
     if isinstance(raw_h4, str) and raw_h4.upper() in ("BULLISH", "BEARISH"):
@@ -667,6 +727,24 @@ def oie_to_legacy_compact(payload: dict) -> dict:
         # v17.56.9: Guardian HTF-gating fields passed through to processor
         "_guardian_label": guardian_label,
         "_guardian_risk": guardian_risk,
+        # v17.58: Sequence state machine + BOS range fields passed through to processor
+        "_sequence_state": sequence_state,
+        "_sequence_step": sequence_step,
+        "_missing_step": missing_step,
+        "_sequence_complete": sequence_complete,
+        "_bos_range_high": bos_range_high,
+        "_bos_range_low": bos_range_low,
+        "_bos_equilibrium": bos_equilibrium,
+        "_bos_trend": bos_trend,
+        "_state1_location": state1_location,
+        "_state2_liquidity": state2_liquidity,
+        "_state3_displacement": state3_displacement,
+        "_state4_mitigation": state4_mitigation,
+        "_state5_execution": state5_execution,
+        "_liquidity_swept": liquidity_swept,
+        "_ltf_shift_detected": ltf_shift_detected,
+        "_displacement_detected": displacement_detected,
+        "_mitigation_zone": mitigation_zone,
     }
 
 
@@ -697,6 +775,49 @@ def _apply_pdh_pdl_fields(payload: dict, record: dict) -> None:
     record["pdl_swept"] = bool(_to_int(payload.get("pdl_swept"), 0))
 
 
+def _apply_sequence_bos_fields(payload: dict, record: dict) -> None:
+    """Parse the v17.58 sequence state machine + BOS-anchored range fields into ``record``.
+
+    Unlike the v17.57 PDH/PDL levels, these 17 fields ARE persisted to the
+    database. Missing or invalid values fall back to safe defaults (0 for the
+    sequence/bos integers, 0.0 for the BOS price levels, False for the boolean
+    flags, None for the text steps). Calling this on an older payload (which
+    lacks the fields) simply applies the defaults — this is how backward
+    compatibility is guaranteed.
+    """
+    record["sequence_state"] = normalize_sequence_state(payload.get("sequence_state"))
+    record["sequence_step"] = payload.get("sequence_step")
+    record["missing_step"] = payload.get("missing_step")
+    record["sequence_complete"] = bool(_to_int(payload.get("sequence_complete"), 0))
+    record["bos_range_high"] = _to_float(payload.get("bos_range_high"), 0.0)
+    record["bos_range_low"] = _to_float(payload.get("bos_range_low"), 0.0)
+    record["bos_equilibrium"] = _to_float(payload.get("bos_equilibrium"), 0.0)
+    record["bos_trend"] = normalize_bos_trend(payload.get("bos_trend"))
+    record["state1_location"] = bool(_to_int(payload.get("state1_location"), 0))
+    record["state2_liquidity"] = bool(_to_int(payload.get("state2_liquidity"), 0))
+    record["state3_displacement"] = bool(_to_int(payload.get("state3_displacement"), 0))
+    record["state4_mitigation"] = bool(_to_int(payload.get("state4_mitigation"), 0))
+    record["state5_execution"] = bool(_to_int(payload.get("state5_execution"), 0))
+    record["liquidity_swept"] = bool(_to_int(payload.get("liquidity_swept"), 0))
+    record["ltf_shift_detected"] = bool(_to_int(payload.get("ltf_shift_detected"), 0))
+    record["displacement_detected"] = bool(_to_int(payload.get("displacement_detected"), 0))
+    record["mitigation_zone"] = bool(_to_int(payload.get("mitigation_zone"), 0))
+
+
+def decode_v17_58_payload(payload: dict) -> dict:
+    """Decode a v17.58 payload (Sequence State Machine + BOS-Anchored Ranges).
+
+    Parses the new v17.58 fields (sequence_state, sequence_step, missing_step,
+    sequence_complete, bos_range_high/low/equilibrium, bos_trend, the five
+    state*_* completion flags, and the four liquidity/shift detection flags) in
+    addition to all existing v17.57 PDH/PDL, v17.56.9 Guardian, v17.56.8 HUD-sync
+    and v17.56.7 dual-mode fields. Unlike PDH/PDL, the v17.58 fields ARE persisted.
+    """
+    record = decode_v17_57_payload(payload)
+    _apply_sequence_bos_fields(payload, record)
+    return record
+
+
 def decode_v17_57_payload(payload: dict) -> dict:
     """Decode a v17.57 payload (PDH/PDL liquidity fields) into a record.
 
@@ -706,6 +827,8 @@ def decode_v17_57_payload(payload: dict) -> dict:
     """
     record = decode_v17_56_9_payload(payload)
     _apply_pdh_pdl_fields(payload, record)
+    # v17.58 sequence/BOS fields default (parsed from payload if present).
+    _apply_sequence_bos_fields(payload, record)
     return record
 
 
@@ -726,6 +849,8 @@ def decode_v17_56_9_payload(payload: dict) -> dict:
     record["guardian_risk"] = normalize_guardian_risk(record.get("guardian_risk"))
     # v17.57 PDH/PDL fields default (parsed from payload if present, else 0.0/False).
     _apply_pdh_pdl_fields(payload, record)
+    # v17.58 sequence/BOS fields default (parsed from payload if present).
+    _apply_sequence_bos_fields(payload, record)
     return record
 
 
@@ -746,6 +871,8 @@ def decode_v17_56_8_payload(payload: dict) -> dict:
     record["guardian_risk"] = normalize_guardian_risk(record.get("guardian_risk"))
     # v17.57 PDH/PDL fields default to 0.0 / False (parsed if present).
     _apply_pdh_pdl_fields(payload, record)
+    # v17.58 sequence/BOS fields default (parsed from payload if present).
+    _apply_sequence_bos_fields(payload, record)
     return record
 
 
@@ -764,6 +891,8 @@ def decode_v17_56_7_payload(payload: dict) -> dict:
     record["guardian_risk"] = normalize_guardian_risk(record.get("guardian_risk"))
     # v17.57 PDH/PDL fields default to 0.0 / False (parsed if present).
     _apply_pdh_pdl_fields(payload, record)
+    # v17.58 sequence/BOS fields default (parsed from payload if present).
+    _apply_sequence_bos_fields(payload, record)
     return record
 
 
@@ -781,6 +910,8 @@ def decode_legacy_payload(payload: dict) -> dict:
     record["guardian_risk"] = normalize_guardian_risk(record.get("guardian_risk"))
     # v17.57 PDH/PDL fields default to 0.0 / False (parsed if present).
     _apply_pdh_pdl_fields(payload, record)
+    # v17.58 sequence/BOS fields default (parsed from payload if present).
+    _apply_sequence_bos_fields(payload, record)
     return record
 
 
@@ -794,7 +925,9 @@ def decode_payload(payload: dict) -> dict:
     """
     version = str(payload.get("version", "unknown"))
 
-    if version.startswith("v17.57"):
+    if version.startswith("v17.58"):
+        return decode_v17_58_payload(payload)
+    elif version.startswith("v17.57"):
         return decode_v17_57_payload(payload)
     elif version.startswith("v17.56.9"):
         return decode_v17_56_9_payload(payload)

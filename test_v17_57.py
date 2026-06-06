@@ -68,8 +68,8 @@ print("=" * 70)
 print("STEP 1: version.py — VERSION bump + pdh_pdl_liquidity feature")
 print("=" * 70)
 from src.version import VERSION, get_version, get_features
-check("VERSION", VERSION, "v17.57")
-check("get_version()", get_version(), "v17.57")
+check_true("VERSION >= v17.57", VERSION >= "v17.57")
+check_true("get_version() >= v17.57", get_version() >= "v17.57")
 check_true("features include pdh_pdl_liquidity", "pdh_pdl_liquidity" in get_features())
 check_true("features still include guardian_htf_gating (carryover)",
            "guardian_htf_gating" in get_features())
@@ -266,7 +266,7 @@ client = app.test_client()
 resp = client.get('/api/v1/health')
 data = resp.get_json()
 check("/health status code", resp.status_code, 200)
-check("/health version", data["version"], "v17.57")
+check_true("/health version >= v17.57", data["version"] >= "v17.57")
 check_true("/health features include pdh_pdl_liquidity",
            "pdh_pdl_liquidity" in data["features"])
 
@@ -285,7 +285,7 @@ check("POST /signal echoes pdl_swept", data.get("pdl_swept"), True)
 resp = client.get('/api/v1/latest')
 data = resp.get_json()
 check("/latest status code", resp.status_code, 200)
-check("/latest version", data.get("version"), "v17.57")
+check_true("/latest version >= v17.57", data.get("version", "") >= "v17.57")
 sig = data.get("signal")
 check_true("/latest signal is populated", sig is not None)
 if sig:
