@@ -7,7 +7,7 @@ payload defaults, and database records.
 """
 
 # Single source of truth for the backend version.
-VERSION = "v17.56.9"
+VERSION = "v17.57"
 
 # Feature flags advertised by the /health endpoint.
 FEATURES = [
@@ -18,7 +18,8 @@ FEATURES = [
     "amd_context_awareness",
     "hud_sync",
     "daily_counters",
-    "guardian_htf_gating",  # NEW in v17.56.9
+    "guardian_htf_gating",
+    "pdh_pdl_liquidity",  # NEW in v17.57
 ]
 
 # Valid AMD (Accumulation-Manipulation-Distribution) market states.
