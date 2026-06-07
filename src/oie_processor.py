@@ -1,11 +1,18 @@
 """
 TradeX Tracker — Opportunity Intelligence Engine (OIE) Processor
-Version: v17.56.8
+Version: v17.56.9
 
 Normalizes incoming webhook payloads from TradingView alert() calls into
 clean opportunity records with human-readable decoded fields. Supports
-v17.56.8 (HUD sync), v17.56.7 (dual mode), v17.56.6, v17.54.x, v17.25, and
-legacy formats.
+v17.56.9 (Guardian HTF-gating), v17.56.8 (HUD sync), v17.56.7 (dual mode),
+v17.56.6, v17.54.x, v17.25, and legacy formats.
+
+v17.56.9 additions (Guardian HTF-gating):
+- guardian_label: full Guardian label incl. HTF warnings
+  (e.g. "CONTINUATION BUY (HTF COUNTER — STANDBY)")
+- guardian_risk: HTF-gating risk level (0=low | 1=medium | 2=high)
+- Optional on the wire; missing fields default to (None, 0).
+- Fully backward compatible with v17.56.8 and older payloads.
 
 v17.56.8 additions (HUD sync):
 - amd_state: market AMD/Wyckoff state
@@ -29,7 +36,10 @@ from datetime import datetime, timezone
 
 from src.decoders import decode_h4_bias, decode_pd_zone, decode_guardian, decode_kill_zone
 from src.database import get_pip_size
-from src.version import VERSION, normalize_amd_state, DEFAULT_AMD_STATE
+from src.version import (
+    VERSION, normalize_amd_state, DEFAULT_AMD_STATE,
+    normalize_guardian_risk, DEFAULT_GUARDIAN_RISK,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -298,9 +308,9 @@ def validate_oie_payload(payload: dict) -> tuple:
 # ============================================================================
 
 def _is_v17_56_7_payload(payload: dict) -> bool:
-    """Detect v17.56.7+ dual-mode payload format (v17.56.7 and v17.56.8)."""
+    """Detect v17.56.7+ dual-mode payload format (v17.56.7, v17.56.8 and v17.56.9)."""
     return ("direction" in payload and "setup" in payload
-            and payload.get("version", "").startswith(("v17.56.7", "v17.56.8")))
+            and payload.get("version", "").startswith(("v17.56.7", "v17.56.8", "v17.56.9")))
 
 
 def _is_v17_56_8_payload(payload: dict) -> bool:
@@ -350,6 +360,10 @@ def normalize_v17_56_7_payload(payload: dict) -> dict:
     sniper_today = _to_int(payload.get("sniper_today"), default=0)
     execution_today = _to_int(payload.get("execution_today"), default=0)
 
+    # v17.56.9: Guardian HTF-gating fields (optional; default-safe)
+    guardian_label = payload.get("guardian_label")
+    guardian_risk = normalize_guardian_risk(payload.get("guardian_risk"))
+
     return {
         "type": setup_type,
         "symbol": symbol,
@@ -371,6 +385,9 @@ def normalize_v17_56_7_payload(payload: dict) -> dict:
         "amd_state": amd_state,
         "sniper_today": sniper_today,
         "execution_today": execution_today,
+        # v17.56.9: Guardian HTF-gating fields
+        "guardian_label": guardian_label,
+        "guardian_risk": guardian_risk,
         # Carry forward standard fields
         "h4_bias": payload.get("h4_bias", payload.get("htf_bias", "")),
         "poi": payload.get("poi"),
@@ -481,6 +498,10 @@ def normalize_oie_payload(payload: dict) -> dict:
     sniper_today = _to_int(payload.get("sniper_today"), default=0)
     execution_today = _to_int(payload.get("execution_today"), default=0)
 
+    # --- v17.56.9: Guardian HTF-gating (optional) ---
+    guardian_label = payload.get("guardian_label")
+    guardian_risk = normalize_guardian_risk(payload.get("guardian_risk"))
+
     result = {
         "pair": symbol,
         "direction": direction,
@@ -514,6 +535,9 @@ def normalize_oie_payload(payload: dict) -> dict:
         "amd_state": amd_state,
         "sniper_today": sniper_today,
         "execution_today": execution_today,
+        # v17.56.9: Guardian HTF-gating fields
+        "guardian_label": guardian_label,
+        "guardian_risk": guardian_risk,
     }
 
     return result
@@ -567,6 +591,10 @@ def oie_to_legacy_compact(payload: dict) -> dict:
     sniper_today = _to_int(payload.get("sniper_today"), default=0)
     execution_today = _to_int(payload.get("execution_today"), default=0)
 
+    # v17.56.9: Extract Guardian HTF-gating fields for passthrough
+    guardian_label = payload.get("guardian_label")
+    guardian_risk = normalize_guardian_risk(payload.get("guardian_risk"))
+
     # Decode h4_bias — handle both string and numeric forms
     raw_h4 = payload.get("h4_bias", 0)
     if isinstance(raw_h4, str) and raw_h4.upper() in ("BULLISH", "BEARISH"):
@@ -602,6 +630,9 @@ def oie_to_legacy_compact(payload: dict) -> dict:
         "_amd_state": amd_state,
         "_sniper_today": sniper_today,
         "_execution_today": execution_today,
+        # v17.56.9: Guardian HTF-gating fields passed through to processor
+        "_guardian_label": guardian_label,
+        "_guardian_risk": guardian_risk,
     }
 
 
@@ -615,43 +646,69 @@ def oie_to_legacy_compact(payload: dict) -> dict:
 # version-aware decoding surface (and guarantee backward compatibility).
 # ============================================================================
 
-def decode_v17_56_8_payload(payload: dict) -> dict:
-    """Decode a v17.56.8 payload (HUD sync fields) into a normalized record.
+def decode_v17_56_9_payload(payload: dict) -> dict:
+    """Decode a v17.56.9 payload (Guardian HTF-gating fields) into a record.
 
-    Parses the new v17.56.8 fields (amd_state, sniper_today, execution_today)
-    in addition to all existing v17.56.7 dual-mode fields.
+    Parses the new v17.56.9 fields (guardian_label, guardian_risk) in addition
+    to all existing v17.56.8 HUD-sync and v17.56.7 dual-mode fields.
     """
     record = normalize_oie_payload(payload)
     # Guarantee the v17.56.8 fields are present and validated.
     record["amd_state"] = normalize_amd_state(record.get("amd_state"))
     record["sniper_today"] = _to_int(record.get("sniper_today"), default=0)
     record["execution_today"] = _to_int(record.get("execution_today"), default=0)
+    # Guarantee the v17.56.9 Guardian fields are present and validated.
+    record.setdefault("guardian_label", None)
+    record["guardian_risk"] = normalize_guardian_risk(record.get("guardian_risk"))
+    return record
+
+
+def decode_v17_56_8_payload(payload: dict) -> dict:
+    """Decode a v17.56.8 payload (HUD sync fields) into a normalized record.
+
+    Parses the new v17.56.8 fields (amd_state, sniper_today, execution_today)
+    in addition to all existing v17.56.7 dual-mode fields. The v17.56.9 Guardian
+    fields default to None / 0 for backward compatibility.
+    """
+    record = normalize_oie_payload(payload)
+    # Guarantee the v17.56.8 fields are present and validated.
+    record["amd_state"] = normalize_amd_state(record.get("amd_state"))
+    record["sniper_today"] = _to_int(record.get("sniper_today"), default=0)
+    record["execution_today"] = _to_int(record.get("execution_today"), default=0)
+    # Guardian fields default for v17.56.8 payloads (which lack them).
+    record.setdefault("guardian_label", None)
+    record["guardian_risk"] = normalize_guardian_risk(record.get("guardian_risk"))
     return record
 
 
 def decode_v17_56_7_payload(payload: dict) -> dict:
-    """Decode a v17.56.7 payload, defaulting the v17.56.8 HUD fields.
+    """Decode a v17.56.7 payload, defaulting the v17.56.8/56.9 fields.
 
     Ensures backward compatibility: v17.56.7 payloads (which lack amd_state /
-    sniper_today / execution_today) get safe defaults.
+    sniper_today / execution_today / guardian_*) get safe defaults.
     """
     record = normalize_oie_payload(payload)
     record.setdefault("amd_state", DEFAULT_AMD_STATE)
     record.setdefault("sniper_today", 0)
     record.setdefault("execution_today", 0)
     record["amd_state"] = normalize_amd_state(record.get("amd_state"))
+    record.setdefault("guardian_label", None)
+    record["guardian_risk"] = normalize_guardian_risk(record.get("guardian_risk"))
     return record
 
 
 def decode_legacy_payload(payload: dict) -> dict:
     """Decode any pre-v17.56.7 payload (v17.54.x / v17.25 / compact / legacy).
 
-    New HUD-sync fields default to ACCUMULATION / 0 / 0.
+    New HUD-sync fields default to ACCUMULATION / 0 / 0 and the Guardian
+    HTF-gating fields default to None / 0.
     """
     record = normalize_oie_payload(payload)
     record.setdefault("amd_state", DEFAULT_AMD_STATE)
     record.setdefault("sniper_today", 0)
     record.setdefault("execution_today", 0)
+    record.setdefault("guardian_label", None)
+    record["guardian_risk"] = normalize_guardian_risk(record.get("guardian_risk"))
     return record
 
 
@@ -659,12 +716,15 @@ def decode_payload(payload: dict) -> dict:
     """Universal decoder with version detection.
 
     Routes the payload to the correct version-specific decoder and always
-    returns a normalized record that includes the v17.56.8 HUD-sync fields
-    (with safe defaults for older payloads).
+    returns a normalized record that includes the v17.56.8 HUD-sync fields and
+    the v17.56.9 Guardian HTF-gating fields (with safe defaults for older
+    payloads).
     """
     version = str(payload.get("version", "unknown"))
 
-    if version.startswith("v17.56.8"):
+    if version.startswith("v17.56.9"):
+        return decode_v17_56_9_payload(payload)
+    elif version.startswith("v17.56.8"):
         return decode_v17_56_8_payload(payload)
     elif version.startswith("v17.56.7"):
         return decode_v17_56_7_payload(payload)

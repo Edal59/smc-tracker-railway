@@ -19,6 +19,7 @@ OIE_MIGRATION_PATH = os.path.join(PROJECT_ROOT, 'schemas', 'migrate_v17_14_oie.s
 OTE_MIGRATION_PATH = os.path.join(PROJECT_ROOT, 'schemas', 'migrate_v17_56_6_ote.sql')
 DUAL_MODE_MIGRATION_PATH = os.path.join(PROJECT_ROOT, 'schemas', 'migrate_v17_56_7_dual_mode.sql')
 HUD_SYNC_MIGRATION_PATH = os.path.join(PROJECT_ROOT, 'schemas', 'migrate_v17_56_8_hud_sync.sql')
+GUARDIAN_GATE_MIGRATION_PATH = os.path.join(PROJECT_ROOT, 'schemas', 'migrate_v17_56_9_guardian_fields.sql')
 
 
 def get_db_path():
@@ -199,6 +200,50 @@ def _run_hud_sync_migration(conn):
     logger.info("HUD sync v17.56.8 migration complete")
 
 
+def _run_guardian_gate_migration(conn):
+    """Run v17.56.9 Guardian HTF-Gating migration — adds guardian_label and
+    guardian_risk columns to opportunities and signals tables.
+
+    Idempotent: checks PRAGMA table_info() before each ALTER, because SQLite
+    does not support 'ALTER TABLE ... ADD COLUMN IF NOT EXISTS'.
+    """
+    guardian_cols = [
+        ("guardian_label", "TEXT"),
+        ("guardian_risk", "INTEGER DEFAULT 0"),
+    ]
+
+    # opportunities table (created by the OIE migration)
+    cursor = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='opportunities'"
+    )
+    if cursor.fetchone():
+        cursor = conn.execute("PRAGMA table_info(opportunities)")
+        opp_columns = [row[1] for row in cursor.fetchall()]
+        for col_name, col_def in guardian_cols:
+            if col_name not in opp_columns:
+                try:
+                    conn.execute(f"ALTER TABLE opportunities ADD COLUMN {col_name} {col_def}")
+                    logger.info(f"Guardian gate migration: added {col_name} to opportunities")
+                except Exception as e:
+                    logger.warning(f"Guardian gate migration: column {col_name} on opportunities: {e}")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_opportunities_guardian_risk ON opportunities(guardian_risk)")
+
+    # signals table
+    cursor = conn.execute("PRAGMA table_info(signals)")
+    sig_columns = [row[1] for row in cursor.fetchall()]
+    for col_name, col_def in guardian_cols:
+        if col_name not in sig_columns:
+            try:
+                conn.execute(f"ALTER TABLE signals ADD COLUMN {col_name} {col_def}")
+                logger.info(f"Guardian gate migration: added {col_name} to signals")
+            except Exception as e:
+                logger.warning(f"Guardian gate migration: column {col_name} on signals: {e}")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_signals_guardian_risk ON signals(guardian_risk)")
+
+    conn.commit()
+    logger.info("Guardian gate v17.56.9 migration complete")
+
+
 def init_db(db_path=None):
     """Initialize database with schema."""
     path = db_path or get_db_path()
@@ -220,6 +265,8 @@ def init_db(db_path=None):
         _run_dual_mode_migration(conn)
         # Run HUD Sync migration for v17.56.8 amd_state/sniper_today/execution_today support
         _run_hud_sync_migration(conn)
+        # Run Guardian Gate migration for v17.56.9 guardian_label/guardian_risk support
+        _run_guardian_gate_migration(conn)
         logger.info(f"Database initialized at {path}")
     finally:
         conn.close()
@@ -276,6 +323,8 @@ def insert_signal(signal_data: dict, db_path=None) -> str:
         'mode', 'session_tag', 'valid',
         # v17.56.8: HUD Sync + AMD Context + Daily Counters
         'amd_state', 'sniper_today', 'execution_today',
+        # v17.56.9: Guardian HTF-Gating & Risk Labels
+        'guardian_label', 'guardian_risk',
     }
 
     cols = []
@@ -327,9 +376,10 @@ def get_active_signals(db_path=None) -> list:
 
 
 def get_signals(pair=None, status=None, mode=None, session_tag=None,
-                amd_state=None, limit=100, offset=0, db_path=None) -> list:
+                amd_state=None, guardian_risk=None, limit=100, offset=0, db_path=None) -> list:
     """Get signals with optional filters.
     v17.56.7: supports mode/session_tag. v17.56.8: supports amd_state.
+    v17.56.9: supports guardian_risk.
     """
     conditions = []
     params = []
@@ -348,6 +398,9 @@ def get_signals(pair=None, status=None, mode=None, session_tag=None,
     if amd_state:
         conditions.append("amd_state = ?")
         params.append(amd_state)
+    if guardian_risk is not None:
+        conditions.append("guardian_risk = ?")
+        params.append(guardian_risk)
     where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
     sql = f"SELECT * FROM signals {where} ORDER BY signal_timestamp DESC LIMIT ? OFFSET ?"
     params.extend([limit, offset])
@@ -357,9 +410,10 @@ def get_signals(pair=None, status=None, mode=None, session_tag=None,
 
 
 def count_signals(pair=None, status=None, mode=None, session_tag=None,
-                  amd_state=None, db_path=None) -> int:
+                  amd_state=None, guardian_risk=None, db_path=None) -> int:
     """Count signals with optional filters.
     v17.56.7: supports mode/session_tag. v17.56.8: supports amd_state.
+    v17.56.9: supports guardian_risk.
     """
     conditions = []
     params = []
@@ -378,6 +432,9 @@ def count_signals(pair=None, status=None, mode=None, session_tag=None,
     if amd_state:
         conditions.append("amd_state = ?")
         params.append(amd_state)
+    if guardian_risk is not None:
+        conditions.append("guardian_risk = ?")
+        params.append(guardian_risk)
     where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
     sql = f"SELECT COUNT(*) FROM signals {where}"
     with get_connection(db_path) as conn:

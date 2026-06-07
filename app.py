@@ -57,7 +57,7 @@ setup_logging()
 logger = logging.getLogger(__name__)
 
 logger.info("=" * 60)
-logger.info(f"TradeX OIE {VERSION} — Cloud Mode (HUD Sync + AMD Context + Daily Counters)")
+logger.info(f"TradeX OIE {VERSION} — Cloud Mode (Guardian HTF-Gating + HUD Sync + AMD Context + Daily Counters)")
 logger.info("=" * 60)
 
 # Initialize database

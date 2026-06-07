@@ -105,6 +105,10 @@ CREATE TABLE IF NOT EXISTS signals (
     sniper_today        INTEGER DEFAULT 0,             -- A+ SNIPER alerts fired today (HUD counter)
     execution_today     INTEGER DEFAULT 0,             -- EXECUTION-mode alerts fired today (HUD counter)
 
+    -- v17.56.9: Guardian HTF-Gating & Risk Labels
+    guardian_label      TEXT,                          -- Full Guardian label incl. HTF warnings
+    guardian_risk       INTEGER DEFAULT 0,             -- HTF-gating risk: 0=low, 1=medium, 2=high
+
     -- Metadata
     indicator_version   TEXT DEFAULT 'v13.4',          -- Indicator version
     timeframe           TEXT DEFAULT '15m',            -- Chart timeframe
@@ -230,6 +234,7 @@ CREATE INDEX IF NOT EXISTS idx_signals_created_at ON signals(created_at);
 CREATE INDEX IF NOT EXISTS idx_signals_trade_status ON signals(trade_status);
 -- v17.56.8: AMD state index for HUD-synced filtering
 CREATE INDEX IF NOT EXISTS idx_signals_amd_state ON signals(amd_state);
+CREATE INDEX IF NOT EXISTS idx_signals_guardian_risk ON signals(guardian_risk);
 
 -- Price ticks: Query by signal
 CREATE INDEX IF NOT EXISTS idx_price_ticks_signal_id ON price_ticks(signal_id);

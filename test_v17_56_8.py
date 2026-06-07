@@ -67,8 +67,10 @@ from src.version import (
     VERSION, get_version, get_features, normalize_amd_state,
     VALID_AMD_STATES, DEFAULT_AMD_STATE,
 )
-check("VERSION", VERSION, "v17.56.8")
-check("get_version()", get_version(), "v17.56.8")
+# VERSION is a single source of truth that advances with each release; assert
+# it is at least v17.56.8 (the release that introduced these HUD-sync features).
+check_true("VERSION >= v17.56.8", VERSION >= "v17.56.8")
+check_true("get_version() >= v17.56.8", get_version() >= "v17.56.8")
 check_true("features include hud_sync", "hud_sync" in get_features())
 check_true("features include amd_context_awareness", "amd_context_awareness" in get_features())
 check_true("features include daily_counters", "daily_counters" in get_features())
@@ -225,7 +227,7 @@ client = app.test_client()
 resp = client.get('/api/v1/health')
 data = resp.get_json()
 check("/health status code", resp.status_code, 200)
-check("/health version", data["version"], "v17.56.8")
+check_true("/health version >= v17.56.8", data["version"] >= "v17.56.8")
 check_true("/health features include hud_sync", "hud_sync" in data["features"])
 check_true("/health features include amd_context_awareness",
            "amd_context_awareness" in data["features"])

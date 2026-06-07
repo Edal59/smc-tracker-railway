@@ -20,6 +20,7 @@ def insert_opportunity(opp: dict, db_path=None) -> int:
     Insert a normalized opportunity record.
     v17.56.7: Includes mode, session_tag, valid, direction fields.
     v17.56.8: Includes amd_state, sniper_today, execution_today fields.
+    v17.56.9: Includes guardian_label, guardian_risk (HTF-gating) fields.
     Returns the new opportunity ID.
     """
     sql = """INSERT INTO opportunities
@@ -28,10 +29,12 @@ def insert_opportunity(opp: dict, db_path=None) -> int:
          quality_score, poi_score, poi_max, has_ote, confluence, dt_stage,
          status, identified_at, raw_payload, version,
          mode, session_tag, valid,
-         amd_state, sniper_today, execution_today)
+         amd_state, sniper_today, execution_today,
+         guardian_label, guardian_risk)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
                 ?, ?, ?,
-                ?, ?, ?)"""
+                ?, ?, ?,
+                ?, ?)"""
 
     valid_val = opp.get("valid", True)
     if isinstance(valid_val, bool):
@@ -62,7 +65,7 @@ def insert_opportunity(opp: dict, db_path=None) -> int:
         opp.get("status", "identified"),
         opp.get("identified_at", datetime.now(timezone.utc).isoformat()),
         opp.get("raw_payload"),
-        opp.get("version", "v17.56.8"),
+        opp.get("version", "v17.56.9"),
         # v17.56.7: Dual mode fields
         opp.get("mode", "DATA"),
         opp.get("session_tag", "NY"),
@@ -71,6 +74,9 @@ def insert_opportunity(opp: dict, db_path=None) -> int:
         opp.get("amd_state", "ACCUMULATION"),
         int(opp.get("sniper_today", 0) or 0),
         int(opp.get("execution_today", 0) or 0),
+        # v17.56.9: Guardian HTF-gating fields
+        opp.get("guardian_label"),
+        int(opp.get("guardian_risk", 0) or 0),
     )
 
     with get_connection(db_path) as conn:

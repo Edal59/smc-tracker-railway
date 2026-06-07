@@ -1,6 +1,7 @@
 """
 SMC Performance Tracker — API Routes
 All webhook and REST API endpoints.
+v17.56.9: Guardian HTF-Gating (guardian_label / guardian_risk) + HTF-counter Standby awareness
 v17.56.8: HUD Sync (amd_state) + AMD Context Awareness + Daily Counters (sniper_today / execution_today)
 v17.56.7: Dual Mode Alert System + Session Analytics + Zombie Trade Prevention
 """
@@ -327,20 +328,24 @@ def receive_signal():
 def list_signals():
     """List signals with optional filters.
     v17.56.7: Supports ?mode=EXECUTION&session=NY filters.
+    v17.56.9: Supports ?guardian_risk=2 filter (0=low | 1=medium | 2=high).
     """
     pair = request.args.get('pair')
     status = request.args.get('status')
     mode = request.args.get('mode')
     session_tag = request.args.get('session')
     amd_state = request.args.get('amd_state')
+    guardian_risk = request.args.get('guardian_risk', type=int)
     limit = min(int(request.args.get('limit', 100)), 500)
     offset = int(request.args.get('offset', 0))
 
     signals = get_signals(pair=pair, status=status, mode=mode,
                           session_tag=session_tag, amd_state=amd_state,
+                          guardian_risk=guardian_risk,
                           limit=limit, offset=offset)
     total = count_signals(pair=pair, status=status, mode=mode,
-                          session_tag=session_tag, amd_state=amd_state)
+                          session_tag=session_tag, amd_state=amd_state,
+                          guardian_risk=guardian_risk)
 
     return jsonify({
         'signals': signals,
@@ -351,6 +356,7 @@ def list_signals():
             'pair': pair, 'status': status,
             'mode': mode, 'session': session_tag,
             'amd_state': amd_state,
+            'guardian_risk': guardian_risk,
         }
     })
 

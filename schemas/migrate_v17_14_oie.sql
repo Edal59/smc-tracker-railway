@@ -48,6 +48,10 @@ CREATE TABLE IF NOT EXISTS opportunities (
     sniper_today    INTEGER     DEFAULT 0,                    -- A+ SNIPER alerts fired today (HUD counter)
     execution_today INTEGER     DEFAULT 0,                    -- EXECUTION-mode alerts fired today (HUD counter)
 
+    -- v17.56.9: Guardian HTF-Gating & Risk Labels
+    guardian_label  TEXT,                                     -- Full Guardian label incl. HTF warnings
+    guardian_risk   INTEGER     DEFAULT 0,                    -- HTF-gating risk: 0=low, 1=medium, 2=high
+
     -- Raw payload for audit
     raw_payload     TEXT,                                     -- JSON string
     version         TEXT        DEFAULT 'v17.25',
