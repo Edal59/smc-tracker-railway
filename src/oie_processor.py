@@ -1,11 +1,24 @@
 """
 TradeX Tracker — Opportunity Intelligence Engine (OIE) Processor
-Version: v17.57
+Version: v17.59
 
 Normalizes incoming webhook payloads from TradingView alert() calls into
 clean opportunity records with human-readable decoded fields. Supports
-v17.57 (PDH/PDL liquidity), v17.56.9 (Guardian HTF-gating), v17.56.8 (HUD sync),
-v17.56.7 (dual mode), v17.56.6, v17.54.x, v17.25, and legacy formats.
+v17.59 (trend override + AMD velocity), v17.58 (sequence state machine + BOS
+ranges), v17.57 (PDH/PDL liquidity), v17.56.9 (Guardian HTF-gating),
+v17.56.8 (HUD sync), v17.56.7 (dual mode), v17.56.6, v17.54.x, v17.25, and
+legacy formats.
+
+v17.59 additions (EMERGENCY FIX — inverted logic during strong trends):
+- htf_override_active / ltf_override_active: HTF/LTF trend override engaged (bool)
+- htf_trend_final / ltf_trend_final: final resolved trend direction (int -1/0/1)
+- range_anchor_time: debug anchor timestamp of the active range (text)
+- range_force_expanded: the range was force-expanded (bool)
+- amd_velocity: AMD velocity as a % of ATR (float)
+- strong_trend_mode: BEARISH / BULLISH / NONE
+- Optional on the wire; missing/invalid fields default to (False / 0 / 0.0 / '' / 'NONE').
+- IN-MEMORY ONLY — NOT persisted to the database (no schema migration).
+  Fully backward compatible.
 
 v17.57 additions (PDH/PDL institutional liquidity levels):
 - pdh: Previous Day High price level (float)
@@ -50,6 +63,7 @@ from src.version import (
     normalize_guardian_risk, DEFAULT_GUARDIAN_RISK,
     normalize_sequence_state, DEFAULT_SEQUENCE_STATE,
     normalize_bos_trend, DEFAULT_BOS_TREND,
+    normalize_strong_trend_mode, DEFAULT_STRONG_TREND_MODE,
 )
 
 logger = logging.getLogger(__name__)
@@ -552,6 +566,19 @@ def normalize_oie_payload(payload: dict) -> dict:
     displacement_detected = bool(_to_int(payload.get("displacement_detected"), 0))
     mitigation_zone = bool(_to_int(payload.get("mitigation_zone"), 0))
 
+    # --- v17.59: Trend override logic + AMD velocity (EMERGENCY FIX, in-memory only) ---
+    # Like the v17.57 PDH/PDL levels, these fields are NOT persisted to the DB.
+    # They are parsed safely (defaults 0 / 0.0 / '' / 'NONE') and carried in-memory
+    # so the API/latest snapshot can surface "strong trend mode" context.
+    htf_override_active = bool(_to_int(payload.get("htf_override_active"), 0))
+    ltf_override_active = bool(_to_int(payload.get("ltf_override_active"), 0))
+    htf_trend_final = _to_int(payload.get("htf_trend_final"), 0)
+    ltf_trend_final = _to_int(payload.get("ltf_trend_final"), 0)
+    range_anchor_time = str(payload.get("range_anchor_time", ""))
+    range_force_expanded = bool(_to_int(payload.get("range_force_expanded"), 0))
+    amd_velocity = _to_float(payload.get("amd_velocity"), 0.0)
+    strong_trend_mode = normalize_strong_trend_mode(payload.get("strong_trend_mode"))
+
     result = {
         "pair": symbol,
         "direction": direction,
@@ -613,6 +640,15 @@ def normalize_oie_payload(payload: dict) -> dict:
         "ltf_shift_detected": ltf_shift_detected,
         "displacement_detected": displacement_detected,
         "mitigation_zone": mitigation_zone,
+        # v17.59: Trend override + AMD velocity (in-memory only; NOT persisted to DB)
+        "htf_override_active": htf_override_active,
+        "ltf_override_active": ltf_override_active,
+        "htf_trend_final": htf_trend_final,
+        "ltf_trend_final": ltf_trend_final,
+        "range_anchor_time": range_anchor_time,
+        "range_force_expanded": range_force_expanded,
+        "amd_velocity": amd_velocity,
+        "strong_trend_mode": strong_trend_mode,
     }
 
     return result
@@ -804,6 +840,42 @@ def _apply_sequence_bos_fields(payload: dict, record: dict) -> None:
     record["mitigation_zone"] = bool(_to_int(payload.get("mitigation_zone"), 0))
 
 
+def _apply_trend_override_fields(payload: dict, record: dict) -> None:
+    """Parse the optional v17.59 trend-override + AMD-velocity fields into ``record``.
+
+    EMERGENCY FIX (v17.59) — IN-MEMORY ONLY. Like the v17.57 PDH/PDL levels,
+    these 8 fields are NOT persisted to the database; they are surfaced on the
+    API/latest snapshot so the frontend can detect "strong trend mode" and
+    avoid inverted entries during strong directional trends. Missing or invalid
+    values fall back to safe defaults (False / 0 / 0.0 / '' / 'NONE'). Calling
+    this on an older payload simply applies the defaults — this is how backward
+    compatibility is guaranteed.
+    """
+    record["htf_override_active"] = bool(_to_int(payload.get("htf_override_active"), 0))
+    record["ltf_override_active"] = bool(_to_int(payload.get("ltf_override_active"), 0))
+    record["htf_trend_final"] = _to_int(payload.get("htf_trend_final"), 0)
+    record["ltf_trend_final"] = _to_int(payload.get("ltf_trend_final"), 0)
+    record["range_anchor_time"] = str(payload.get("range_anchor_time", ""))
+    record["range_force_expanded"] = bool(_to_int(payload.get("range_force_expanded"), 0))
+    record["amd_velocity"] = _to_float(payload.get("amd_velocity"), 0.0)
+    record["strong_trend_mode"] = normalize_strong_trend_mode(payload.get("strong_trend_mode"))
+
+
+def decode_v17_59_payload(payload: dict) -> dict:
+    """Decode a v17.59 payload (EMERGENCY FIX: Trend Override + AMD Velocity).
+
+    Parses the new v17.59 fields (htf_override_active, ltf_override_active,
+    htf_trend_final, ltf_trend_final, range_anchor_time, range_force_expanded,
+    amd_velocity, strong_trend_mode) in addition to all existing v17.58
+    sequence/BOS, v17.57 PDH/PDL, v17.56.9 Guardian, v17.56.8 HUD-sync and
+    v17.56.7 dual-mode fields. The v17.59 fields are IN-MEMORY ONLY (not
+    persisted to the DB — no schema migration required).
+    """
+    record = decode_v17_58_payload(payload)
+    _apply_trend_override_fields(payload, record)
+    return record
+
+
 def decode_v17_58_payload(payload: dict) -> dict:
     """Decode a v17.58 payload (Sequence State Machine + BOS-Anchored Ranges).
 
@@ -815,6 +887,8 @@ def decode_v17_58_payload(payload: dict) -> dict:
     """
     record = decode_v17_57_payload(payload)
     _apply_sequence_bos_fields(payload, record)
+    # v17.59 trend-override/AMD-velocity fields default (parsed from payload if present).
+    _apply_trend_override_fields(payload, record)
     return record
 
 
@@ -829,6 +903,8 @@ def decode_v17_57_payload(payload: dict) -> dict:
     _apply_pdh_pdl_fields(payload, record)
     # v17.58 sequence/BOS fields default (parsed from payload if present).
     _apply_sequence_bos_fields(payload, record)
+    # v17.59 trend-override/AMD-velocity fields default (parsed from payload if present).
+    _apply_trend_override_fields(payload, record)
     return record
 
 
@@ -851,6 +927,8 @@ def decode_v17_56_9_payload(payload: dict) -> dict:
     _apply_pdh_pdl_fields(payload, record)
     # v17.58 sequence/BOS fields default (parsed from payload if present).
     _apply_sequence_bos_fields(payload, record)
+    # v17.59 trend-override/AMD-velocity fields default (parsed from payload if present).
+    _apply_trend_override_fields(payload, record)
     return record
 
 
@@ -873,6 +951,8 @@ def decode_v17_56_8_payload(payload: dict) -> dict:
     _apply_pdh_pdl_fields(payload, record)
     # v17.58 sequence/BOS fields default (parsed from payload if present).
     _apply_sequence_bos_fields(payload, record)
+    # v17.59 trend-override/AMD-velocity fields default (parsed from payload if present).
+    _apply_trend_override_fields(payload, record)
     return record
 
 
@@ -893,6 +973,8 @@ def decode_v17_56_7_payload(payload: dict) -> dict:
     _apply_pdh_pdl_fields(payload, record)
     # v17.58 sequence/BOS fields default (parsed from payload if present).
     _apply_sequence_bos_fields(payload, record)
+    # v17.59 trend-override/AMD-velocity fields default (parsed from payload if present).
+    _apply_trend_override_fields(payload, record)
     return record
 
 
@@ -912,6 +994,8 @@ def decode_legacy_payload(payload: dict) -> dict:
     _apply_pdh_pdl_fields(payload, record)
     # v17.58 sequence/BOS fields default (parsed from payload if present).
     _apply_sequence_bos_fields(payload, record)
+    # v17.59 trend-override/AMD-velocity fields default (parsed from payload if present).
+    _apply_trend_override_fields(payload, record)
     return record
 
 
@@ -925,7 +1009,9 @@ def decode_payload(payload: dict) -> dict:
     """
     version = str(payload.get("version", "unknown"))
 
-    if version.startswith("v17.58"):
+    if version.startswith("v17.59"):
+        return decode_v17_59_payload(payload)
+    elif version.startswith("v17.58"):
         return decode_v17_58_payload(payload)
     elif version.startswith("v17.57"):
         return decode_v17_57_payload(payload)
