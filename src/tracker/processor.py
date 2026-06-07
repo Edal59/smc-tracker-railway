@@ -105,6 +105,25 @@ def expand_compact_entry(data: dict) -> dict:
     guardian_label = data.get('_guardian_label')
     guardian_risk = int(data.get('_guardian_risk', 0) or 0)
 
+    # v17.58: Extract sequence state machine + BOS range fields passed through from OIE bridge
+    sequence_state = int(data.get('_sequence_state', 0) or 0)
+    sequence_step = data.get('_sequence_step')
+    missing_step = data.get('_missing_step')
+    sequence_complete = 1 if data.get('_sequence_complete') else 0
+    bos_range_high = float(data.get('_bos_range_high', 0.0) or 0.0)
+    bos_range_low = float(data.get('_bos_range_low', 0.0) or 0.0)
+    bos_equilibrium = float(data.get('_bos_equilibrium', 0.0) or 0.0)
+    bos_trend = int(data.get('_bos_trend', 0) or 0)
+    state1_location = 1 if data.get('_state1_location') else 0
+    state2_liquidity = 1 if data.get('_state2_liquidity') else 0
+    state3_displacement = 1 if data.get('_state3_displacement') else 0
+    state4_mitigation = 1 if data.get('_state4_mitigation') else 0
+    state5_execution = 1 if data.get('_state5_execution') else 0
+    liquidity_swept = 1 if data.get('_liquidity_swept') else 0
+    ltf_shift_detected = 1 if data.get('_ltf_shift_detected') else 0
+    displacement_detected = 1 if data.get('_displacement_detected') else 0
+    mitigation_zone = 1 if data.get('_mitigation_zone') else 0
+
     # v17.56.7: Trade classification fix — INVALID for missing SL/TP
     if entry_price == 0 or sl == 0 or tp == 0:
         initial_status = 'INVALID'
@@ -160,6 +179,24 @@ def expand_compact_entry(data: dict) -> dict:
         # v17.56.9: Guardian HTF-gating fields
         'guardian_label': guardian_label,
         'guardian_risk': guardian_risk,
+        # v17.58: Sequence state machine + BOS-anchored range fields (persisted)
+        'sequence_state': sequence_state,
+        'sequence_step': sequence_step,
+        'missing_step': missing_step,
+        'sequence_complete': sequence_complete,
+        'bos_range_high': bos_range_high,
+        'bos_range_low': bos_range_low,
+        'bos_equilibrium': bos_equilibrium,
+        'bos_trend': bos_trend,
+        'state1_location': state1_location,
+        'state2_liquidity': state2_liquidity,
+        'state3_displacement': state3_displacement,
+        'state4_mitigation': state4_mitigation,
+        'state5_execution': state5_execution,
+        'liquidity_swept': liquidity_swept,
+        'ltf_shift_detected': ltf_shift_detected,
+        'displacement_detected': displacement_detected,
+        'mitigation_zone': mitigation_zone,
     }
 
 

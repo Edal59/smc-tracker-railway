@@ -20,6 +20,7 @@ OTE_MIGRATION_PATH = os.path.join(PROJECT_ROOT, 'schemas', 'migrate_v17_56_6_ote
 DUAL_MODE_MIGRATION_PATH = os.path.join(PROJECT_ROOT, 'schemas', 'migrate_v17_56_7_dual_mode.sql')
 HUD_SYNC_MIGRATION_PATH = os.path.join(PROJECT_ROOT, 'schemas', 'migrate_v17_56_8_hud_sync.sql')
 GUARDIAN_GATE_MIGRATION_PATH = os.path.join(PROJECT_ROOT, 'schemas', 'migrate_v17_56_9_guardian_fields.sql')
+SEQUENCE_STATE_MIGRATION_PATH = os.path.join(PROJECT_ROOT, 'schemas', 'migrate_v17_58_sequence_fields.sql')
 
 
 def get_db_path():
@@ -244,6 +245,54 @@ def _run_guardian_gate_migration(conn):
     logger.info("Guardian gate v17.56.9 migration complete")
 
 
+def _run_sequence_state_migration(conn):
+    """Run v17.58 Sequence State Machine & BOS-Anchored Ranges migration —
+    adds 17 columns to the signals table.
+
+    Unlike the v17.57 PDH/PDL levels (in-memory only), these fields are
+    persisted. Idempotent: checks PRAGMA table_info() before each ALTER,
+    because SQLite does not support 'ALTER TABLE ... ADD COLUMN IF NOT EXISTS'.
+    """
+    sequence_cols = [
+        # Sequence state machine
+        ("sequence_state", "INTEGER DEFAULT 0"),
+        ("sequence_step", "TEXT"),
+        ("missing_step", "TEXT"),
+        ("sequence_complete", "INTEGER DEFAULT 0"),
+        # BOS-anchored ranges
+        ("bos_range_high", "REAL DEFAULT 0"),
+        ("bos_range_low", "REAL DEFAULT 0"),
+        ("bos_equilibrium", "REAL DEFAULT 0"),
+        ("bos_trend", "INTEGER DEFAULT 0"),
+        # State completion flags
+        ("state1_location", "INTEGER DEFAULT 0"),
+        ("state2_liquidity", "INTEGER DEFAULT 0"),
+        ("state3_displacement", "INTEGER DEFAULT 0"),
+        ("state4_mitigation", "INTEGER DEFAULT 0"),
+        ("state5_execution", "INTEGER DEFAULT 0"),
+        # Liquidity / shift detection
+        ("liquidity_swept", "INTEGER DEFAULT 0"),
+        ("ltf_shift_detected", "INTEGER DEFAULT 0"),
+        ("displacement_detected", "INTEGER DEFAULT 0"),
+        ("mitigation_zone", "INTEGER DEFAULT 0"),
+    ]
+
+    cursor = conn.execute("PRAGMA table_info(signals)")
+    sig_columns = [row[1] for row in cursor.fetchall()]
+    for col_name, col_def in sequence_cols:
+        if col_name not in sig_columns:
+            try:
+                conn.execute(f"ALTER TABLE signals ADD COLUMN {col_name} {col_def}")
+                logger.info(f"Sequence state migration: added {col_name} to signals")
+            except Exception as e:
+                logger.warning(f"Sequence state migration: column {col_name} on signals: {e}")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_signals_sequence_state ON signals(sequence_state)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_signals_sequence_complete ON signals(sequence_complete)")
+
+    conn.commit()
+    logger.info("Sequence state v17.58 migration complete")
+
+
 def init_db(db_path=None):
     """Initialize database with schema."""
     path = db_path or get_db_path()
@@ -267,6 +316,8 @@ def init_db(db_path=None):
         _run_hud_sync_migration(conn)
         # Run Guardian Gate migration for v17.56.9 guardian_label/guardian_risk support
         _run_guardian_gate_migration(conn)
+        # Run Sequence State migration for v17.58 sequence state machine + BOS ranges
+        _run_sequence_state_migration(conn)
         logger.info(f"Database initialized at {path}")
     finally:
         conn.close()
@@ -325,6 +376,13 @@ def insert_signal(signal_data: dict, db_path=None) -> str:
         'amd_state', 'sniper_today', 'execution_today',
         # v17.56.9: Guardian HTF-Gating & Risk Labels
         'guardian_label', 'guardian_risk',
+        # v17.58: Sequence State Machine & BOS-Anchored Ranges (persisted)
+        'sequence_state', 'sequence_step', 'missing_step', 'sequence_complete',
+        'bos_range_high', 'bos_range_low', 'bos_equilibrium', 'bos_trend',
+        'state1_location', 'state2_liquidity', 'state3_displacement',
+        'state4_mitigation', 'state5_execution',
+        'liquidity_swept', 'ltf_shift_detected', 'displacement_detected',
+        'mitigation_zone',
     }
 
     cols = []
@@ -375,12 +433,10 @@ def get_active_signals(db_path=None) -> list:
     return [dict_from_row(r) for r in rows]
 
 
-def get_signals(pair=None, status=None, mode=None, session_tag=None,
-                amd_state=None, guardian_risk=None, limit=100, offset=0, db_path=None) -> list:
-    """Get signals with optional filters.
-    v17.56.7: supports mode/session_tag. v17.56.8: supports amd_state.
-    v17.56.9: supports guardian_risk.
-    """
+def _build_signal_conditions(pair=None, status=None, mode=None, session_tag=None,
+                             amd_state=None, guardian_risk=None,
+                             sequence_state=None, sequence_complete=None):
+    """Shared WHERE-clause builder for get_signals / count_signals."""
     conditions = []
     params = []
     if pair:
@@ -401,41 +457,45 @@ def get_signals(pair=None, status=None, mode=None, session_tag=None,
     if guardian_risk is not None:
         conditions.append("guardian_risk = ?")
         params.append(guardian_risk)
+    if sequence_state is not None:
+        conditions.append("sequence_state = ?")
+        params.append(sequence_state)
+    if sequence_complete is not None:
+        conditions.append("sequence_complete = ?")
+        params.append(sequence_complete)
     where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+    return where, params
+
+
+def get_signals(pair=None, status=None, mode=None, session_tag=None,
+                amd_state=None, guardian_risk=None, sequence_state=None,
+                sequence_complete=None, limit=100, offset=0, db_path=None) -> list:
+    """Get signals with optional filters.
+    v17.56.7: supports mode/session_tag. v17.56.8: supports amd_state.
+    v17.56.9: supports guardian_risk.
+    v17.58: supports sequence_state / sequence_complete.
+    """
+    where, params = _build_signal_conditions(
+        pair, status, mode, session_tag, amd_state, guardian_risk,
+        sequence_state, sequence_complete)
     sql = f"SELECT * FROM signals {where} ORDER BY signal_timestamp DESC LIMIT ? OFFSET ?"
-    params.extend([limit, offset])
+    params = list(params) + [limit, offset]
     with get_connection(db_path) as conn:
         rows = conn.execute(sql, params).fetchall()
     return [dict_from_row(r) for r in rows]
 
 
 def count_signals(pair=None, status=None, mode=None, session_tag=None,
-                  amd_state=None, guardian_risk=None, db_path=None) -> int:
+                  amd_state=None, guardian_risk=None, sequence_state=None,
+                  sequence_complete=None, db_path=None) -> int:
     """Count signals with optional filters.
     v17.56.7: supports mode/session_tag. v17.56.8: supports amd_state.
     v17.56.9: supports guardian_risk.
+    v17.58: supports sequence_state / sequence_complete.
     """
-    conditions = []
-    params = []
-    if pair:
-        conditions.append("pair = ?")
-        params.append(pair)
-    if status:
-        conditions.append("status = ?")
-        params.append(status)
-    if mode:
-        conditions.append("mode = ?")
-        params.append(mode)
-    if session_tag:
-        conditions.append("session_tag = ?")
-        params.append(session_tag)
-    if amd_state:
-        conditions.append("amd_state = ?")
-        params.append(amd_state)
-    if guardian_risk is not None:
-        conditions.append("guardian_risk = ?")
-        params.append(guardian_risk)
-    where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+    where, params = _build_signal_conditions(
+        pair, status, mode, session_tag, amd_state, guardian_risk,
+        sequence_state, sequence_complete)
     sql = f"SELECT COUNT(*) FROM signals {where}"
     with get_connection(db_path) as conn:
         return conn.execute(sql, params).fetchone()[0]

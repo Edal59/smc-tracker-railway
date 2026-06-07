@@ -1,6 +1,7 @@
 """
 SMC Performance Tracker — API Routes
 All webhook and REST API endpoints.
+v17.58: Sequence State Machine (sequence_state / sequence_step / missing_step / sequence_complete + 5 state flags) + BOS-Anchored Ranges (bos_range_high / bos_range_low / bos_equilibrium / bos_trend) + liquidity/shift detection flags — PERSISTED, exposed via /signals and /sequence-analytics
 v17.57: PDH/PDL Institutional Liquidity Levels (pdh / pdl / near_pdh / near_pdl / pdh_swept / pdl_swept) — in-memory only, exposed via /latest
 v17.56.9: Guardian HTF-Gating (guardian_label / guardian_risk) + HTF-counter Standby awareness
 v17.56.8: HUD Sync (amd_state) + AMD Context Awareness + Daily Counters (sniper_today / execution_today)
@@ -69,6 +70,24 @@ def _update_latest_signal(opp_record: dict) -> None:
             'near_pdl': bool(opp_record.get('near_pdl', False)),
             'pdh_swept': bool(opp_record.get('pdh_swept', False)),
             'pdl_swept': bool(opp_record.get('pdl_swept', False)),
+            # v17.58 sequence state machine + BOS-anchored ranges (persisted)
+            'sequence_state': opp_record.get('sequence_state', 0),
+            'sequence_step': opp_record.get('sequence_step'),
+            'missing_step': opp_record.get('missing_step'),
+            'sequence_complete': bool(opp_record.get('sequence_complete', False)),
+            'bos_range_high': opp_record.get('bos_range_high', 0.0),
+            'bos_range_low': opp_record.get('bos_range_low', 0.0),
+            'bos_equilibrium': opp_record.get('bos_equilibrium', 0.0),
+            'bos_trend': opp_record.get('bos_trend', 0),
+            'state1_location': bool(opp_record.get('state1_location', False)),
+            'state2_liquidity': bool(opp_record.get('state2_liquidity', False)),
+            'state3_displacement': bool(opp_record.get('state3_displacement', False)),
+            'state4_mitigation': bool(opp_record.get('state4_mitigation', False)),
+            'state5_execution': bool(opp_record.get('state5_execution', False)),
+            'liquidity_swept': bool(opp_record.get('liquidity_swept', False)),
+            'ltf_shift_detected': bool(opp_record.get('ltf_shift_detected', False)),
+            'displacement_detected': bool(opp_record.get('displacement_detected', False)),
+            'mitigation_zone': bool(opp_record.get('mitigation_zone', False)),
             'received_at': datetime.now(timezone.utc).isoformat(),
         }
     except Exception as e:  # never let caching break the webhook path
@@ -334,6 +353,15 @@ def receive_signal():
                 'near_pdl': bool(opp_record.get('near_pdl', False)),
                 'pdh_swept': bool(opp_record.get('pdh_swept', False)),
                 'pdl_swept': bool(opp_record.get('pdl_swept', False)),
+                # v17.58: Sequence state machine + BOS-anchored ranges (persisted)
+                'sequence_state': opp_record.get('sequence_state', 0),
+                'sequence_step': opp_record.get('sequence_step'),
+                'missing_step': opp_record.get('missing_step'),
+                'sequence_complete': bool(opp_record.get('sequence_complete', False)),
+                'bos_range_high': opp_record.get('bos_range_high', 0.0),
+                'bos_range_low': opp_record.get('bos_range_low', 0.0),
+                'bos_equilibrium': opp_record.get('bos_equilibrium', 0.0),
+                'bos_trend': opp_record.get('bos_trend', 0),
                 'legacy_signal_id': legacy_signal_id,
             }), 200
 
@@ -400,6 +428,7 @@ def list_signals():
     """List signals with optional filters.
     v17.56.7: Supports ?mode=EXECUTION&session=NY filters.
     v17.56.9: Supports ?guardian_risk=2 filter (0=low | 1=medium | 2=high).
+    v17.58: Supports ?sequence_state=5 and ?sequence_complete=1 filters.
     """
     pair = request.args.get('pair')
     status = request.args.get('status')
@@ -407,16 +436,22 @@ def list_signals():
     session_tag = request.args.get('session')
     amd_state = request.args.get('amd_state')
     guardian_risk = request.args.get('guardian_risk', type=int)
+    sequence_state = request.args.get('sequence_state', type=int)
+    sequence_complete = request.args.get('sequence_complete', type=int)
     limit = min(int(request.args.get('limit', 100)), 500)
     offset = int(request.args.get('offset', 0))
 
     signals = get_signals(pair=pair, status=status, mode=mode,
                           session_tag=session_tag, amd_state=amd_state,
                           guardian_risk=guardian_risk,
+                          sequence_state=sequence_state,
+                          sequence_complete=sequence_complete,
                           limit=limit, offset=offset)
     total = count_signals(pair=pair, status=status, mode=mode,
                           session_tag=session_tag, amd_state=amd_state,
-                          guardian_risk=guardian_risk)
+                          guardian_risk=guardian_risk,
+                          sequence_state=sequence_state,
+                          sequence_complete=sequence_complete)
 
     return jsonify({
         'signals': signals,
@@ -428,7 +463,52 @@ def list_signals():
             'mode': mode, 'session': session_tag,
             'amd_state': amd_state,
             'guardian_risk': guardian_risk,
+            'sequence_state': sequence_state,
+            'sequence_complete': sequence_complete,
         }
+    })
+
+
+@api_bp.route('/sequence-analytics', methods=['GET'])
+@require_api_key
+def sequence_analytics():
+    """v17.58: Sequence State Machine analytics.
+
+    Returns the distribution of persisted signals across the 5-state
+    institutional sequence (0=idle .. 5=execution), the completion rate, and
+    a breakdown of the individual state-completion / detection flags. Supports
+    an optional ?pair= filter.
+    """
+    pair = request.args.get('pair')
+
+    state_labels = {
+        0: 'idle',
+        1: 'location',
+        2: 'liquidity',
+        3: 'displacement',
+        4: 'mitigation',
+        5: 'execution',
+    }
+
+    total = count_signals(pair=pair)
+    completed = count_signals(pair=pair, sequence_complete=1)
+
+    state_distribution = {}
+    for state, label in state_labels.items():
+        state_distribution[str(state)] = {
+            'label': label,
+            'count': count_signals(pair=pair, sequence_state=state),
+        }
+
+    completion_rate = round((completed / total) * 100, 2) if total else 0.0
+
+    return jsonify({
+        'version': VERSION,
+        'pair': pair,
+        'total_signals': total,
+        'sequence_complete': completed,
+        'completion_rate_pct': completion_rate,
+        'state_distribution': state_distribution,
     })
 
 
