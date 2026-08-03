@@ -146,8 +146,26 @@
                     <tr><td class="text-muted">Auth Required</td><td>{{ 'Yes' if config.require_auth else 'No' }}</td></tr>
                     <tr><td class="text-muted">API Key Set</td><td>{{ 'Yes ✓' if config.api_key else 'No ⚠️' }}</td></tr>
                     <tr><td class="text-muted">Price Tracker</td><td>{{ 'Enabled' if config.price_tracker_enabled else 'Disabled' }}</td></tr>
-                    <tr><td class="text-muted">Version</td><td><span class="badge bg-info">v17.56.6</span> OIE</td></tr>
+                    <tr>
+                        <td class="text-muted">Same-Candle TP+SL</td>
+                        <td>
+                            {% if config.same_candle_conflict == 'TP_FIRST' %}
+                                <span class="badge bg-warning text-dark">TP&nbsp;First</span> (optimistic → WON)
+                            {% else %}
+                                <span class="badge bg-danger">SL&nbsp;First</span> (conservative default → LOST)
+                            {% endif %}
+                        </td>
+                    </tr>
+                    <tr><td class="text-muted">Version</td><td><span class="badge bg-info">{{ version }}</span> MB alerts</td></tr>
                 </table>
+                <p class="text-muted small mt-2 mb-0">
+                    <i class="bi bi-shield-check me-1"></i>
+                    When a single candle touches both the take-profit and the stop-loss, the outcome
+                    is resolved by the <strong>Same-Candle TP+SL</strong> rule above. The conservative
+                    <strong>SL&nbsp;First</strong> default records the trade as a loss. Set the
+                    <code>SAME_CANDLE_CONFLICT</code> environment variable to <code>TP_FIRST</code> to
+                    switch to the optimistic behaviour.
+                </p>
             </div>
         </div>
 

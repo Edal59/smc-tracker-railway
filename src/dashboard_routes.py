@@ -46,7 +46,9 @@ def opportunities():
 def settings():
     """Settings/info page."""
     webhook_url = request.host_url.rstrip('/') + '/api/v1/signal'
-    return render_template('settings.html', config=config, webhook_url=webhook_url)
+    from src.version import VERSION
+    return render_template('settings.html', config=config, webhook_url=webhook_url,
+                           version=VERSION)
 
 
 # ============================================================
