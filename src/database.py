@@ -293,6 +293,62 @@ def _run_sequence_state_migration(conn):
     logger.info("Sequence state v17.58 migration complete")
 
 
+def _run_mb_alerts_migration(conn):
+    """Run v17.85.34 Market Brief (MB) execution-alert migration — adds the
+    columns needed to store the 10 live TradingView execution alerts
+    (MB_EXECUTE / MB_CONTINUE / MB_CT / MB_MACRO / MB_REENTRY / MB_VREVERSAL).
+
+    Purely additive. Idempotent: checks PRAGMA table_info() before each ALTER,
+    because SQLite does not support 'ALTER TABLE ... ADD COLUMN IF NOT EXISTS'.
+    """
+    mb_cols = [
+        ("alert_name", "TEXT"),
+        ("mb_type", "TEXT"),
+        ("entry_mode", "TEXT"),
+        ("entry_source", "TEXT"),
+        ("confidence", "INTEGER DEFAULT 0"),
+        ("macro_express", "INTEGER DEFAULT 0"),
+        ("fast_lane", "INTEGER DEFAULT 0"),
+        ("re_entry", "INTEGER DEFAULT 0"),
+        ("displacement_value", "REAL DEFAULT 0"),
+        ("trigger_text", "TEXT"),
+        ("narrative", "TEXT"),
+        ("location", "TEXT"),
+        ("bias", "TEXT"),
+        ("mb_action", "TEXT"),
+        ("geometry_valid", "INTEGER DEFAULT 1"),
+        ("test_batch", "TEXT"),
+        ("raw_payload", "TEXT"),
+    ]
+
+    cursor = conn.execute("PRAGMA table_info(signals)")
+    sig_columns = [row[1] for row in cursor.fetchall()]
+    for col_name, col_def in mb_cols:
+        if col_name not in sig_columns:
+            try:
+                conn.execute(f"ALTER TABLE signals ADD COLUMN {col_name} {col_def}")
+                logger.info(f"MB alerts migration: added {col_name} to signals")
+            except Exception as e:
+                logger.warning(f"MB alerts migration: column {col_name} on signals: {e}")
+
+    for idx_sql in (
+        "CREATE INDEX IF NOT EXISTS idx_signals_alert_name ON signals(alert_name)",
+        "CREATE INDEX IF NOT EXISTS idx_signals_mb_type ON signals(mb_type)",
+        "CREATE INDEX IF NOT EXISTS idx_signals_macro_express ON signals(macro_express)",
+        "CREATE INDEX IF NOT EXISTS idx_signals_fast_lane ON signals(fast_lane)",
+        "CREATE INDEX IF NOT EXISTS idx_signals_re_entry ON signals(re_entry)",
+        "CREATE INDEX IF NOT EXISTS idx_signals_indicator_version ON signals(indicator_version)",
+        "CREATE INDEX IF NOT EXISTS idx_signals_test_batch ON signals(test_batch)",
+    ):
+        try:
+            conn.execute(idx_sql)
+        except Exception as e:
+            logger.warning(f"MB alerts migration: index creation: {e}")
+
+    conn.commit()
+    logger.info("MB alerts v17.85.34 migration complete")
+
+
 def init_db(db_path=None):
     """Initialize database with schema."""
     path = db_path or get_db_path()
@@ -318,6 +374,8 @@ def init_db(db_path=None):
         _run_guardian_gate_migration(conn)
         # Run Sequence State migration for v17.58 sequence state machine + BOS ranges
         _run_sequence_state_migration(conn)
+        # Run MB alerts migration for v17.85.34 live execution alerts (MB_*)
+        _run_mb_alerts_migration(conn)
         logger.info(f"Database initialized at {path}")
     finally:
         conn.close()
@@ -383,6 +441,11 @@ def insert_signal(signal_data: dict, db_path=None) -> str:
         'state4_mitigation', 'state5_execution',
         'liquidity_swept', 'ltf_shift_detected', 'displacement_detected',
         'mitigation_zone',
+        # v17.85.34: Market Brief (MB) live execution alert fields
+        'alert_name', 'mb_type', 'entry_mode', 'entry_source', 'confidence',
+        'macro_express', 'fast_lane', 're_entry', 'displacement_value',
+        'trigger_text', 'narrative', 'location', 'bias', 'mb_action',
+        'geometry_valid', 'test_batch', 'raw_payload',
     }
 
     cols = []
@@ -435,7 +498,12 @@ def get_active_signals(db_path=None) -> list:
 
 def _build_signal_conditions(pair=None, status=None, mode=None, session_tag=None,
                              amd_state=None, guardian_risk=None,
-                             sequence_state=None, sequence_complete=None):
+                             sequence_state=None, sequence_complete=None,
+                             direction=None, alert_name=None, mb_type=None,
+                             entry_mode=None, macro_express=None, fast_lane=None,
+                             re_entry=None, indicator_version=None,
+                             test_batch=None, min_confidence=None,
+                             max_confidence=None):
     """Shared WHERE-clause builder for get_signals / count_signals."""
     conditions = []
     params = []
@@ -463,21 +531,58 @@ def _build_signal_conditions(pair=None, status=None, mode=None, session_tag=None
     if sequence_complete is not None:
         conditions.append("sequence_complete = ?")
         params.append(sequence_complete)
+    # v17.85.34: Market Brief (MB) execution-alert filters
+    if direction:
+        conditions.append("direction = ?")
+        params.append(direction)
+    if alert_name:
+        conditions.append("alert_name = ?")
+        params.append(alert_name)
+    if mb_type:
+        conditions.append("mb_type = ?")
+        params.append(mb_type)
+    if entry_mode:
+        conditions.append("entry_mode = ?")
+        params.append(entry_mode)
+    if macro_express is not None:
+        conditions.append("macro_express = ?")
+        params.append(macro_express)
+    if fast_lane is not None:
+        conditions.append("fast_lane = ?")
+        params.append(fast_lane)
+    if re_entry is not None:
+        conditions.append("re_entry = ?")
+        params.append(re_entry)
+    if indicator_version:
+        conditions.append("indicator_version = ?")
+        params.append(indicator_version)
+    if test_batch:
+        conditions.append("test_batch = ?")
+        params.append(test_batch)
+    if min_confidence is not None:
+        conditions.append("confidence >= ?")
+        params.append(min_confidence)
+    if max_confidence is not None:
+        conditions.append("confidence <= ?")
+        params.append(max_confidence)
     where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
     return where, params
 
 
 def get_signals(pair=None, status=None, mode=None, session_tag=None,
                 amd_state=None, guardian_risk=None, sequence_state=None,
-                sequence_complete=None, limit=100, offset=0, db_path=None) -> list:
+                sequence_complete=None, limit=100, offset=0, db_path=None,
+                **mb_filters) -> list:
     """Get signals with optional filters.
     v17.56.7: supports mode/session_tag. v17.56.8: supports amd_state.
     v17.56.9: supports guardian_risk.
     v17.58: supports sequence_state / sequence_complete.
+    v17.85.34: supports direction/alert_name/mb_type/entry_mode/macro_express/
+    fast_lane/re_entry/indicator_version/test_batch/min_confidence/max_confidence.
     """
     where, params = _build_signal_conditions(
         pair, status, mode, session_tag, amd_state, guardian_risk,
-        sequence_state, sequence_complete)
+        sequence_state, sequence_complete, **mb_filters)
     sql = f"SELECT * FROM signals {where} ORDER BY signal_timestamp DESC LIMIT ? OFFSET ?"
     params = list(params) + [limit, offset]
     with get_connection(db_path) as conn:
@@ -487,15 +592,16 @@ def get_signals(pair=None, status=None, mode=None, session_tag=None,
 
 def count_signals(pair=None, status=None, mode=None, session_tag=None,
                   amd_state=None, guardian_risk=None, sequence_state=None,
-                  sequence_complete=None, db_path=None) -> int:
+                  sequence_complete=None, db_path=None, **mb_filters) -> int:
     """Count signals with optional filters.
     v17.56.7: supports mode/session_tag. v17.56.8: supports amd_state.
     v17.56.9: supports guardian_risk.
     v17.58: supports sequence_state / sequence_complete.
+    v17.85.34: supports the same MB execution-alert filters as get_signals.
     """
     where, params = _build_signal_conditions(
         pair, status, mode, session_tag, amd_state, guardian_risk,
-        sequence_state, sequence_complete)
+        sequence_state, sequence_complete, **mb_filters)
     sql = f"SELECT COUNT(*) FROM signals {where}"
     with get_connection(db_path) as conn:
         return conn.execute(sql, params).fetchone()[0]

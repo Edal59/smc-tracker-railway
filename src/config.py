@@ -62,6 +62,20 @@ class Config:
         return int(os.environ.get('TIMEOUT_MINUTES', 4320))
 
     @property
+    def same_candle_conflict(self):
+        """How to resolve a candle where BOTH TP and SL are touched.
+
+        SL_FIRST  -> conservative default: the stop-loss is assumed to have
+                     been hit first, so the trade is recorded as LOST.
+        TP_FIRST  -> optimistic: the take-profit is assumed first (WON).
+
+        Controlled by the SAME_CANDLE_CONFLICT env var. Any unrecognised
+        value falls back to the conservative SL_FIRST default.
+        """
+        val = os.environ.get('SAME_CANDLE_CONFLICT', 'SL_FIRST').strip().upper()
+        return val if val in ('SL_FIRST', 'TP_FIRST') else 'SL_FIRST'
+
+    @property
     def log_level(self):
         return os.environ.get('LOG_LEVEL', 'INFO')
 
@@ -86,6 +100,7 @@ class Config:
             'price_tracker.poll_interval_seconds': self.price_poll_interval,
             'price_tracker.timeout_bars': self.timeout_bars,
             'price_tracker.timeout_minutes': self.timeout_minutes,
+            'price_tracker.same_candle_conflict': self.same_candle_conflict,
             'logging.level': self.log_level,
             'logging.file': self.log_file,
         }

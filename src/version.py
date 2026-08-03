@@ -7,7 +7,7 @@ payload defaults, and database records.
 """
 
 # Single source of truth for the backend version.
-VERSION = "v17.59"
+VERSION = "v17.85.34"
 
 # Feature flags advertised by the /health endpoint.
 FEATURES = [
@@ -24,6 +24,12 @@ FEATURES = [
     "sequence_state_machine",  # NEW in v17.58
     "trend_override_logic",  # NEW in v17.59 (emergency fix)
     "amd_velocity_detection",  # NEW in v17.59 (emergency fix)
+    "mb_execution_alerts",  # NEW in v17.85.34 (10 live MB_* execution alerts)
+    "indicator_supplied_sl_tp",  # NEW in v17.85.34 (SL/TP used as received, never recalculated)
+    "entry_price_lane_selection",  # NEW in v17.85.34 (entry_price for RE_ENTRY/V_REVERSAL, price otherwise)
+    "geometry_validation",  # NEW in v17.85.34 (BUY sl<entry<tp / SELL tp<entry<sl)
+    "same_candle_conflict_setting",  # NEW in v17.85.34 (visible SL-first default)
+    "mb_analytics_filters",  # NEW in v17.85.34 (alert/type/lane/version/test-batch filters)
 ]
 
 # Valid AMD (Accumulation-Manipulation-Distribution) market states.

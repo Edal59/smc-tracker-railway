@@ -19,6 +19,7 @@ from src.config import config
 from src.webhook_server.validators import validate_alert
 from src.tracker.processor import process_alert
 from src.oie_processor import is_oie_payload, normalize_oie_payload, oie_to_legacy_compact, normalize_v17_54_payload
+from src.mb_processor import is_mb_payload, normalize_mb_payload
 from src.oie_database import (
     insert_opportunity, get_opportunity, get_opportunities,
     count_opportunities, get_oie_summary
@@ -26,7 +27,7 @@ from src.oie_database import (
 from src.database import (
     get_signal, get_signals, get_active_signals, count_signals,
     get_events, log_system, get_performance_summary_filtered,
-    get_signals_for_analysis
+    get_signals_for_analysis, insert_signal, insert_event
 )
 from src.analytics.metrics import get_full_metrics, get_cumulative_pnl, get_rolling_win_rate
 from src.analytics.reports import generate_json_report, generate_csv_signals
@@ -281,6 +282,94 @@ def receive_signal():
     if not data:
         return jsonify({'error': 'Invalid JSON payload'}), 400
 
+    # ── v17.85.34 Market Brief (MB) live execution alert detection ──
+    # These are the 10 tradeable execution alerts (MB_EXECUTE / MB_CONTINUE /
+    # MB_CT / MB_MACRO / MB_REENTRY / MB_VREVERSAL, LONG & SHORT). They all
+    # route into ONE trade-creation workflow. Direction comes from the payload
+    # 'direction' field; SL/TP are used exactly as received (never invented);
+    # a missing/invalid required price or bad geometry is rejected with a
+    # visible error and the raw payload is retained for inspection.
+    if is_mb_payload(data):
+        alert_name = str(data.get('alert', '')).upper().strip()
+        try:
+            record, mb_error = normalize_mb_payload(data)
+
+            if mb_error:
+                # Rejected — surface a visible error and retain the raw payload.
+                logger.warning(f"[MB] ⛔ Rejected {alert_name}: {mb_error}")
+                log_system('ERROR', 'webhook',
+                           f"MB alert rejected ({alert_name}): {mb_error}",
+                           {'alert': alert_name, 'error': mb_error,
+                            'raw_payload': data})
+                return jsonify({
+                    'status': 'rejected',
+                    'pipeline': 'mb',
+                    'alert': alert_name,
+                    'error': mb_error,
+                    'raw_payload': data,
+                }), 400
+
+            signal_id = insert_signal(record)
+            try:
+                insert_event(signal_id, 'ENTRY', {
+                    'alert': alert_name,
+                    'mb_type': record.get('mb_type'),
+                    'entry_mode': record.get('entry_mode'),
+                    'entry_source': record.get('entry_source'),
+                    'direction': record.get('direction'),
+                }, price_at_event=record.get('entry_price'))
+            except Exception as ee:
+                logger.warning(f"[MB] insert_event failed (non-critical): {ee}")
+
+            log_system('INFO', 'webhook',
+                       f"MB trade created: {alert_name} {record['direction']} "
+                       f"{record['pair']} entry={record['entry_price']} "
+                       f"sl={record['stop_loss']} tp={record['take_profit']} "
+                       f"(entry_source={record['entry_source']}, "
+                       f"version={record['indicator_version']})",
+                       {'signal_id': signal_id, 'alert': alert_name})
+
+            logger.info(
+                f"[MB] ✅ {alert_name} → {record['mb_type']} {record['direction']} "
+                f"{record['pair']} | entry={record['entry_price']} "
+                f"({record['entry_source']}) sl={record['stop_loss']} "
+                f"tp={record['take_profit']} rr={record.get('rr_ratio')} "
+                f"conf={record.get('confidence')} v={record['indicator_version']}"
+            )
+
+            return jsonify({
+                'status': 'ok',
+                'pipeline': 'mb',
+                'signal_id': signal_id,
+                'alert': alert_name,
+                'mb_type': record['mb_type'],
+                'direction': record['direction'],
+                'pair': record['pair'],
+                'entry_price': record['entry_price'],
+                'entry_source': record['entry_source'],
+                'stop_loss': record['stop_loss'],
+                'take_profit': record['take_profit'],
+                'sl_distance_pips': record['sl_distance_pips'],
+                'tp_distance_pips': record['tp_distance_pips'],
+                'rr_ratio': record.get('rr_ratio'),
+                'confidence': record.get('confidence'),
+                'macro_express': record.get('macro_express'),
+                'fast_lane': record.get('fast_lane'),
+                're_entry': record.get('re_entry'),
+                'geometry_valid': record.get('geometry_valid'),
+                'session': record.get('session_tag'),
+                'kill_zone': record.get('kill_zone'),
+                'test_batch': record.get('test_batch'),
+                'version': record['indicator_version'],
+            }), 200
+
+        except Exception as e:
+            logger.error(f"[MB] processing error: {e}", exc_info=True)
+            log_system('ERROR', 'webhook', f"MB error: {str(e)}",
+                       {'alert': alert_name, 'raw_payload': data})
+            return jsonify({'error': 'MB processing failed',
+                            'message': str(e), 'raw_payload': data}), 500
+
     # ── v17.54.x / v17.25 / v17.56.7 OIE format detection ──
     if is_oie_payload(data):
         try:
@@ -457,20 +546,40 @@ def list_signals():
     guardian_risk = request.args.get('guardian_risk', type=int)
     sequence_state = request.args.get('sequence_state', type=int)
     sequence_complete = request.args.get('sequence_complete', type=int)
+    # v17.85.34: Market Brief (MB) execution-alert filters
+    direction = request.args.get('direction')
+    alert_name = request.args.get('alert_name')
+    mb_type = request.args.get('mb_type')
+    entry_mode = request.args.get('entry_mode')
+    macro_express = request.args.get('macro_express', type=int)
+    fast_lane = request.args.get('fast_lane', type=int)
+    re_entry = request.args.get('re_entry', type=int)
+    indicator_version = request.args.get('version') or request.args.get('indicator_version')
+    test_batch = request.args.get('test_batch') or request.args.get('batch')
+    min_confidence = request.args.get('min_confidence', type=int)
+    max_confidence = request.args.get('max_confidence', type=int)
     limit = min(int(request.args.get('limit', 100)), 500)
     offset = int(request.args.get('offset', 0))
+
+    mb_filters = {
+        'direction': direction, 'alert_name': alert_name, 'mb_type': mb_type,
+        'entry_mode': entry_mode, 'macro_express': macro_express,
+        'fast_lane': fast_lane, 're_entry': re_entry,
+        'indicator_version': indicator_version, 'test_batch': test_batch,
+        'min_confidence': min_confidence, 'max_confidence': max_confidence,
+    }
 
     signals = get_signals(pair=pair, status=status, mode=mode,
                           session_tag=session_tag, amd_state=amd_state,
                           guardian_risk=guardian_risk,
                           sequence_state=sequence_state,
                           sequence_complete=sequence_complete,
-                          limit=limit, offset=offset)
+                          limit=limit, offset=offset, **mb_filters)
     total = count_signals(pair=pair, status=status, mode=mode,
                           session_tag=session_tag, amd_state=amd_state,
                           guardian_risk=guardian_risk,
                           sequence_state=sequence_state,
-                          sequence_complete=sequence_complete)
+                          sequence_complete=sequence_complete, **mb_filters)
 
     return jsonify({
         'signals': signals,
@@ -484,6 +593,7 @@ def list_signals():
             'guardian_risk': guardian_risk,
             'sequence_state': sequence_state,
             'sequence_complete': sequence_complete,
+            **mb_filters,
         }
     })
 

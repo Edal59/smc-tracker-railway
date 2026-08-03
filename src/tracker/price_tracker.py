@@ -131,6 +131,9 @@ class PriceTracker:
         self.provider = provider or create_price_provider()
         self.poll_interval = config.price_poll_interval
         self.timeout_minutes = config.timeout_minutes
+        # How to resolve a candle that touches BOTH TP and SL. Conservative
+        # SL_FIRST default means the stop is assumed hit first (trade = LOST).
+        self.same_candle_conflict = config.same_candle_conflict
         self._running = False
         self._thread = None
 
@@ -246,6 +249,24 @@ class PriceTracker:
                     timed_out = True
             except Exception:
                 pass
+
+        # Same-candle conflict resolution: when a single tick/candle touches
+        # BOTH the take-profit and the stop-loss we cannot know which came
+        # first from price alone. The behaviour is a VISIBLE, configurable
+        # setting (config.same_candle_conflict / SAME_CANDLE_CONFLICT env var).
+        #   SL_FIRST (default, conservative) -> record the trade as LOST.
+        #   TP_FIRST (optimistic)            -> record the trade as WON.
+        if tp_hit and sl_hit:
+            if self.same_candle_conflict == 'TP_FIRST':
+                sl_hit = False  # optimistic: let the TP branch win below
+                logger.info(
+                    f"Same-candle TP+SL conflict on {signal_id}: resolving TP_FIRST (WON)"
+                )
+            else:
+                tp_hit = False  # conservative default: let the SL branch win
+                logger.info(
+                    f"Same-candle TP+SL conflict on {signal_id}: resolving SL_FIRST (LOST)"
+                )
 
         # Resolve outcome
         now_ts = datetime.now(timezone.utc).isoformat()
